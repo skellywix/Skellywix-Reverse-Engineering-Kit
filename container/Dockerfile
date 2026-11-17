@@ -8,12 +8,10 @@
 # Secrets are never build inputs: no ARG or ENV carries a key, and nothing is copied from
 # /srv/re-lab/secrets.
 
-ARG UBUNTU_IMAGE=ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8
-ARG RUST_IMAGE=rust:1.100.0-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea
 ARG APT_SNAPSHOT=20261027T000000Z
 
 # ---------------------------------------------------------------------------
-FROM ${UBUNTU_IMAGE} AS base
+FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8 AS base
 ARG APT_SNAPSHOT
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
 # snapshot.ubuntu.com redirects http to https, so apt needs CA certificates before it can read the
@@ -67,7 +65,7 @@ RUN ./configure --prefix=/opt/zeek --build-type=Release --disable-spicy --disabl
 
 # ---------------------------------------------------------------------------
 # Binwalk 3 ships no release binaries: build the pinned crate with its own Cargo.lock.
-FROM ${RUST_IMAGE} AS binwalk-build
+FROM rust:1.100.0-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea AS binwalk-build
 RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libfontconfig1-dev \
  && rm -rf /var/lib/apt/lists/*
 RUN curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
@@ -154,7 +152,7 @@ RUN fetch-verified https://registry.npmjs.org/rea-agents/-/rea-agents-6.8.0.tgz 
  && mkdir /opt/rea && tar -xzf /tmp/rea.tgz -C /opt/rea --strip-components=1 && rm /tmp/rea.tgz \
  && fetch-verified https://raw.githubusercontent.com/morluto/rea/160d821ac9a0310afcb8d1fc427862dd6508add5/package-lock.json \
       1d8fa0f33b3125d3e601ec832b18d9d35b37453f36340dc0507f065a8de158ad /opt/rea/package-lock.json \
- && cd /opt/rea && npm ci --omit=dev --omit=optional --ignore-scripts
+ && npm --prefix /opt/rea ci --omit=dev --omit=optional --ignore-scripts
 
 # Python tools (Unblob, Frida, Scapy) from a hash-locked set; pip refuses any unhashed or source-only package.
 COPY requirements.lock /tmp/requirements.lock
