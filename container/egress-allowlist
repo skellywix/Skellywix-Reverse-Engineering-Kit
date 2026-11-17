@@ -1,0 +1,37 @@
+# re-egress: the only route out of re-agent. Squid forward proxy, CONNECT only, to the model endpoints.
+# Anything else, including the LAN, the Docker host, and every non-listed domain, is refused.
+http_port 3128
+
+acl model_endpoints dstdomain -n api.openai.com api.anthropic.com openrouter.ai chatgpt.com auth.openai.com
+acl tls_port port 443
+acl connect_method method CONNECT
+# Refuse numeric CONNECT hosts before the domain allowlist. -n above also disables PTR matching.
+acl literal_ip dstdom_regex -i ^[0-9]{1,3}(\.[0-9]{1,3}){3}$
+acl literal_ip dstdom_regex -i ^\[?[0-9a-f]*:[0-9a-f:.]*\]?$
+# A listed name that resolves to a private or local address must still be refused.
+acl private_dst dst 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16
+acl private_dst dst ::1 fc00::/7 fe80::/10
+
+http_access deny !tls_port
+http_access deny private_dst
+http_access deny connect_method literal_ip
+http_access allow connect_method tls_port model_endpoints
+http_access deny all
+
+# No caching, no Via/X-Forwarded-For, no outbound identity.
+cache deny all
+via off
+forwarded_for delete
+
+# TLS stays end to end (CONNECT): the proxy sees host names, never request bodies or keys.
+access_log stdio:/dev/stdout
+cache_log /dev/stderr
+pid_filename /tmp/squid.pid
+coredump_dir /tmp
+shutdown_lifetime 1 seconds
+# The ICMP pinger needs raw sockets; the proxy runs with no capabilities.
+pinger_enable off
+# Squid sizes its descriptor tables from the container's nofile limit; without a cap it
+# exceeds the proxy's memory limit at startup. One agent at a time needs far fewer.
+max_filedescriptors 1024
+cache_mem 8 MB

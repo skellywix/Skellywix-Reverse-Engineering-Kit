@@ -1,0 +1,69 @@
+# Autonomous reverse-engineering build and proxy stack for the Docker host (project re-lab).
+# re-egress is the only long-running container. The root-owned re-dispatcher systemd service
+# starts one digest-pinned re-agent container per claimed job and one-shot re-exec containers
+# for its validated execution requests. The agent and exec compose services are build-only.
+# No container receives the Docker socket.
+name: re-lab
+
+services:
+  re-egress:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: egress
+    image: re-lab-egress:local
+    runtime: runsc
+    restart: unless-stopped
+    networks:
+      re-internal:
+        # Fixed so agents reach the proxy through /etc/hosts (EGRESS_IP in re-dispatcher.py).
+        ipv4_address: 172.30.97.2
+      re-egress: {}
+    volumes:
+      # gVisor cannot reach Docker's embedded DNS (127.0.0.11) on user-defined networks, so the
+      # proxy resolves model hosts through the host's upstream resolvers (README step 4).
+      - /etc/re-lab/egress-resolv.conf:/etc/resolv.conf:ro
+    mem_limit: 128m # measured about 51 MiB under runsc with max_filedescriptors 1024
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+      - /var/spool/squid:size=8m
+
+  # Build-only: re-dispatcher starts one fresh digest-pinned container per claimed job.
+  re-agent:
+    profiles: [build-only]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: agent
+    image: re-lab-agent:local
+
+  # Build-only: `docker compose --profile build-only build re-exec` produces the image
+  # executor.py runs targets in (qemu-user plus runtimes; not in the agent image).
+  re-exec:
+    profiles: [build-only]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: exec
+    image: re-lab-exec:local
+
+networks:
+  # Isolated internal bridge: containers reach each other, not host bridge addresses or off-host.
+  re-internal:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+      com.docker.network.bridge.gateway_mode_ipv6: isolated
+    ipam:
+      config:
+        - subnet: 172.30.97.0/24
+  # Outbound bridge, attached to re-egress only.
+  re-egress:
+    driver: bridge
+
+# No named volumes: each agent's home and /tmp are per-container tmpfs mounts.

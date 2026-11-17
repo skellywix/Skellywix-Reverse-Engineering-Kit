@@ -1,0 +1,28 @@
+[Unit]
+Description=re-dispatcher: trusted host job control for the RE container stack
+Documentation=file:///opt/re-lab/README.md
+After=docker.service
+Requires=docker.service
+# Never run against the bare directory on the root disk: the 40 GiB bound and models.env live on the mount.
+RequiresMountsFor=/srv/re-lab
+
+[Service]
+Type=simple
+# Root owns claims, immutable sources, Docker launch, execution requests, and publication.
+# Only the active job's agent-writable directories are mounted into its fresh container.
+ExecStart=/usr/bin/python3 /opt/re-lab/re-dispatcher.py --config /etc/re-lab/dispatcher.json
+Restart=on-failure
+RestartSec=5
+User=root
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
+ReadWritePaths=/srv/re-lab
+ReadOnlyPaths=/etc/re-lab /opt/re-lab /var/run/docker.sock
+LockPersonality=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target
