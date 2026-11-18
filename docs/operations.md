@@ -122,3 +122,8 @@ needs the README's isolation checks and both smoke jobs (one static, one through
 before untrusted work resumes. Keep `docker info` showing `runsc`, keep `--check` free of FAIL
 lines, and confirm from an agent container that only the five model hosts are reachable and that
 a CONNECT to any other name is refused without a DNS lookup.
+
+The agent image stages the OMP native addon variant that OMP selects on the build host's CPU
+(the modern variant on AVX2 machines). Build the agent image on a host with the same CPU
+features as the runtime host, or confirm in the static smoke job that OMP starts and the REA
+tools answer.
