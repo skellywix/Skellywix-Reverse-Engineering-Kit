@@ -1,5 +1,7 @@
 # OMP profile `re-lab`, installed into ~/.omp/profiles/re-lab/agent by runner.py before every job.
 # runner.py appends the per-role model pins (every role set to the job's model); none are set here.
+# Every key below is an OMP 18.22.0 setting id; tests/test_re_container_runner.py pins the list,
+# because OMP ignores an unknown key and a typo would silently drop the setting.
 # A job never leaves the model it was started with: no fallback chain, no usage-based switching.
 retry:
   enabled: true
@@ -13,8 +15,18 @@ retry:
 # The only network route is the model allowlist proxy, so self-update could not work anyway.
 update:
   auto: false
+# OMP's internet tools default to on, and web search runs through the model provider, which the
+# proxy allows. The agent must not search or fetch on a hostile target's behalf.
+fetch:
+  enabled: false
+web_search:
+  enabled: false
+browser:
+  enabled: false
 # The job directory holds a hostile target: never load MCP servers or context from it, and
-# never discover other tools' configuration (omp://settings.md, omp://mcp-config.md).
+# never discover other tools' configuration (omp://settings.md, omp://mcp-config.md). Every
+# discovery provider that reads project or user configuration is off; `native` stays on because
+# it loads this profile's own mcp.json (REA) and skills/ from the profile's agent directory.
 mcp:
   enableProjectConfig: false
 disabledProviders:
@@ -29,3 +41,13 @@ disabledProviders:
   - agents-md
   - claude-md
   - custom-context
+  - agent-plugins
+  - cline
+  - mcp-json
+  - omp-plugins
+  - omp-managed
+  - skillshare
+  - ssh-config
+  - ssh-json
+  - vscode
+  - windsurf
