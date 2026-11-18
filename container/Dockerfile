@@ -4,11 +4,15 @@
 # Pinning rule: the base image is pinned by digest, apt reads a dated snapshot, and every
 # downloaded artifact goes through fetch-verified, which fails the build on a SHA-256
 # mismatch. Nothing here uses `latest`. Sources for every pin are in README.md.
+# Two documented exceptions, both verified by a distribution archive keyring rather than a
+# date: the one-time ca-certificates bootstrap below reads the image's default Ubuntu archive
+# before switching to the snapshot, and the build-only binwalk stage installs two build
+# dependencies from the Rust image's Debian archive. Neither changes what is fetch-verified.
 #
 # Secrets are never build inputs: no ARG or ENV carries a key, and nothing is copied from
 # /srv/re-lab/secrets.
 
-ARG APT_SNAPSHOT=20261027T000000Z
+ARG APT_SNAPSHOT=20261118T000000Z
 
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8 AS base
@@ -68,7 +72,7 @@ RUN ./configure --prefix=/opt/zeek --build-type=Release --disable-spicy --disabl
 FROM rust:1.100.0-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea AS binwalk-build
 RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libfontconfig1-dev \
  && rm -rf /var/lib/apt/lists/*
-RUN curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+RUN curl --fail --silent --show-error --location --retry 3 --proto '=https' --tlsv1.2 \
       -o /tmp/binwalk.crate https://crates.io/api/v1/crates/binwalk/3.1.0/download \
  && echo "99d5dc70f5021c55624f098adae4d1de9c1c07d000475664704b675aad7e0811  /tmp/binwalk.crate" \
       | sha256sum --check --strict - \
@@ -88,17 +92,17 @@ RUN echo 'wireshark-common wireshark-common/install-setuid boolean false' | debc
       tshark unzip xxd xz-utils zlib1g zstd \
  && rm -rf /var/lib/apt/lists/*
 
-# JDK 25 (Ghidra 12.1.4 runtime)
+# JDK 25 (Ghidra 12.2 runtime; 12.2 requires JDK 25 or later)
 RUN fetch-verified \
       "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jdk_x64_linux_hotspot_25.0.5_8.tar.gz" \
       68982529869257d0ee6b824ec5aa270ff8b118bb438670da0b97ebdab178d7fb /tmp/jdk.tgz \
  && mkdir /opt/jdk && tar -xzf /tmp/jdk.tgz -C /opt/jdk --strip-components=1 && rm /tmp/jdk.tgz
 
-# Ghidra 12.1.4
+# Ghidra 12.2 (fixes the 2026-10-22 parser advisories that affect < 12.2)
 RUN fetch-verified \
-      https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip \
-      ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db /tmp/ghidra.zip \
- && unzip -q /tmp/ghidra.zip -d /opt && mv /opt/ghidra_12.1.4_PUBLIC /opt/ghidra && rm /tmp/ghidra.zip \
+      https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.2_build/ghidra_12.2_PUBLIC_20261016.zip \
+      2c2cd776db3c1f6a097ba418922378ac3649cadd5e844a6f5f088ae628a7be67 /tmp/ghidra.zip \
+ && unzip -q /tmp/ghidra.zip -d /opt && mv /opt/ghidra_12.2_PUBLIC /opt/ghidra && rm /tmp/ghidra.zip \
  && chmod 0755 /opt/ghidra/support/analyzeHeadless /opt/ghidra/support/launch.sh
 
 # JADX 1.5.6
@@ -106,25 +110,25 @@ RUN fetch-verified https://github.com/skylot/jadx/releases/download/v1.5.6/jadx-
       545ea2be9c242511bc145755cf4bda2485ade42966e096f8b4d3da2a230e8974 /tmp/jadx.zip \
  && unzip -q /tmp/jadx.zip -d /opt/jadx && rm /tmp/jadx.zip
 
-# radare2 6.2.4 and Detect It Easy 3.21 (.deb)
-RUN fetch-verified https://github.com/radareorg/radare2/releases/download/6.2.4/radare2_6.2.4_amd64.deb \
-      7019eedc0e0e87d1f53d6b8f5fc62b898567679c5efdce7fbfc557c9e7655e90 /tmp/radare2.deb \
+# radare2 6.2.6 and Detect It Easy 3.21 (.deb)
+RUN fetch-verified https://github.com/radareorg/radare2/releases/download/6.2.6/radare2_6.2.6_amd64.deb \
+      0dddf90e217e38a6a658881b9ec7e217198487c75b7f82a332b3cbd30834636f /tmp/radare2.deb \
  && fetch-verified https://github.com/horsicq/DIE-engine/releases/download/3.21/die_3.21_Ubuntu_24.04_amd64.deb \
       96e8e82e822e3ca8a829536312b92e8b241147fe38c8ab29c9dbfc1ab21aa25d /tmp/die.deb \
  && apt-get update && apt-get install -y --no-install-recommends /tmp/radare2.deb /tmp/die.deb \
  && rm -rf /var/lib/apt/lists/* /tmp/radare2.deb /tmp/die.deb
 
-# capa v10.0.0 and YARA-X v1.22.1
+# capa v10.0.0 and YARA-X v1.23.0
 RUN fetch-verified https://github.com/mandiant/capa/releases/download/v10.0.0/capa-v10.0.0-linux.zip \
       96cb5115f495024a478b0e9f9f77f9027058155589235fbd4c50e7382055fcca /tmp/capa.zip \
  && unzip -q /tmp/capa.zip -d /opt/capa && chmod 0755 /opt/capa/capa && ln -s /opt/capa/capa /usr/local/bin/capa \
  && rm /tmp/capa.zip \
- && fetch-verified https://github.com/VirusTotal/yara-x/releases/download/v1.22.1/yara-x-v1.22.1-x86_64-unknown-linux-gnu.tar.gz \
-      c0ff80408d57b94f8348b9b19b5c70fb03e6471e7fdd761c97e0b4876804eecf /tmp/yrx.tgz \
+ && fetch-verified https://github.com/VirusTotal/yara-x/releases/download/v1.23.0/yara-x-v1.23.0-x86_64-unknown-linux-gnu.tar.gz \
+      da0c17f23fc743dcd44ad6d3135c906a4c0d197685b661c4cdc923c2f8967a64 /tmp/yrx.tgz \
  && mkdir /opt/yara-x && tar -xzf /tmp/yrx.tgz -C /opt/yara-x && rm /tmp/yrx.tgz \
  && ln -s "$(find /opt/yara-x -name yr -type f | head -n 1)" /usr/local/bin/yr
 
-# WebAssembly suite: WABT 1.0.42, wasm-tools 1.262.0, Binaryen 133, Wasmtime 50.0.0
+# WebAssembly suite: WABT 1.0.42, wasm-tools 1.262.0, Binaryen 133, Wasmtime 50.0.2
 RUN fetch-verified https://github.com/WebAssembly/wabt/releases/download/1.0.42/wabt-1.0.42-linux-x64.tar.gz \
       84895407a6bbb80e918f33b16b2fb2206021c150b6bc9ff6f761263a745ab131 /tmp/wabt.tgz \
  && mkdir /opt/wabt && tar -xzf /tmp/wabt.tgz -C /opt/wabt --strip-components=1 \
@@ -134,8 +138,8 @@ RUN fetch-verified https://github.com/WebAssembly/wabt/releases/download/1.0.42/
  && fetch-verified https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz \
       2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489 /tmp/binaryen.tgz \
  && mkdir /opt/binaryen && tar -xzf /tmp/binaryen.tgz -C /opt/binaryen --strip-components=1 \
- && fetch-verified https://github.com/bytecodealliance/wasmtime/releases/download/v50.0.0/wasmtime-v50.0.0-x86_64-linux.tar.xz \
-      77c19ee0437991f9ac7837b9c269d9c7076744f85dad263fea5214cc2723c7ff /tmp/wasmtime.txz \
+ && fetch-verified https://github.com/bytecodealliance/wasmtime/releases/download/v50.0.2/wasmtime-v50.0.2-x86_64-linux.tar.xz \
+      5db0ca8e838ab95a51ba9acdf11f42888bcd0092dda45a86129ae540c4fa952c /tmp/wasmtime.txz \
  && mkdir /opt/wasmtime && tar -xJf /tmp/wasmtime.txz -C /opt/wasmtime --strip-components=1 \
  && rm /tmp/wabt.tgz /tmp/wasm-tools.tgz /tmp/binaryen.tgz /tmp/wasmtime.txz
 
@@ -143,8 +147,8 @@ COPY --from=zeek-build /opt/zeek /opt/zeek
 COPY --from=binwalk-build /usr/local/bin/binwalk /usr/local/bin/binwalk
 
 # Node 22 LTS, then REA 6.8.0 from the npm tarball plus its reviewed lockfile.
-RUN fetch-verified https://nodejs.org/dist/v22.23.4/node-v22.23.4-linux-x64.tar.xz \
-      1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce /tmp/node.txz \
+RUN fetch-verified https://nodejs.org/dist/v22.23.5/node-v22.23.5-linux-x64.tar.xz \
+      cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8 /tmp/node.txz \
  && mkdir /opt/node && tar -xJf /tmp/node.txz -C /opt/node --strip-components=1 && rm /tmp/node.txz
 ENV PATH=/opt/node/bin:${PATH} npm_config_audit=false npm_config_fund=false npm_config_update_notifier=false
 RUN fetch-verified https://registry.npmjs.org/rea-agents/-/rea-agents-6.8.0.tgz \
@@ -167,8 +171,8 @@ ENV JAVA_HOME=/opt/jdk GHIDRA_INSTALL_DIR=/opt/ghidra \
 
 # ---------------------------------------------------------------------------
 # re-agent: the tools plus OMP, the runner, the prompt and the OMP profile `re-lab` (REA's skill is
-# copied in so the profile is self-contained). It parses hostile files and never executes them,
-# so it has no qemu-user.
+# copied in so the profile is self-contained). Its prompt forbids executing the target here, so it
+# has no qemu-user; interpreters remain, so that rule is behavioural, not enforced (see SECURITY.md).
 FROM tools AS agent
 # OMP 18.22.0 standalone binary. Its native addon is embedded and normally extracted into
 # ~/.omp/natives, but the agent's home is a noexec tmpfs where mmap of the addon fails. Extract
@@ -183,8 +187,7 @@ COPY runner.py /opt/re-lab/runner.py
 COPY prompts/ /opt/re-lab/prompts/
 COPY omp-profile/ /opt/re-lab/omp-profile/
 RUN mkdir -p /opt/re-lab/omp-profile/skills \
- && cp -r /opt/rea/skills/reverse-engineer-anything /opt/re-lab/omp-profile/skills/ \
- && mkdir -p /srv/re-lab && chown re:re /srv/re-lab
+ && cp -r /opt/rea/skills/reverse-engineer-anything /opt/re-lab/omp-profile/skills/
 
 USER re
 WORKDIR /home/re

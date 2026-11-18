@@ -24,6 +24,12 @@ services:
       # proxy resolves model hosts through the host's upstream resolvers (README step 4).
       - /etc/re-lab/egress-resolv.conf:/etc/resolv.conf:ro
     mem_limit: 128m # measured about 51 MiB under runsc with max_filedescriptors 1024
+    logging:
+      # Bounded logs: Docker's default json-file driver never rotates, and every CONNECT is logged.
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
@@ -54,6 +60,9 @@ services:
 
 networks:
   # Isolated internal bridge: containers reach each other, not host bridge addresses or off-host.
+  # gateway_mode_ipv4/ipv6 need Docker Engine 28.0 or later: Engine 26 silently ignores them and
+  # 27 rejects them. `re-dispatcher.py --check` (the unit's ExecStartPre) refuses to start
+  # unless the network is internal with an isolated gateway.
   re-internal:
     internal: true
     driver_opts:

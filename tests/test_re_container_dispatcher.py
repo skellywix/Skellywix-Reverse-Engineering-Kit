@@ -80,6 +80,10 @@ class DispatcherTestBase(unittest.TestCase):
         self.dispatcher.prepare_job(self.cfg, job_id)
         return work
 
+    def publish_prepared_job(self):
+        keys = self.dispatcher._read_job_environment(self.cfg)
+        return self.dispatcher.publish_job(self.cfg, JOB, secrets=keys.secrets)
+
 
 class EgressPolicyTests(unittest.TestCase):
     def test_squid_rules_block_literal_ips_before_the_domain_allow(self):
@@ -201,14 +205,18 @@ class AgentArgvTests(DispatcherTestBase):
         self.assertEqual(argv[image + 1:], ["python3", "/opt/re-lab/runner.py", "--job", JOB])
         for flag in ("--rm", "--runtime=runsc", "--read-only", "--cap-drop=ALL",
                      "--security-opt=no-new-privileges", "--user=10001:10001",
-                     "--memory=3g", "--pids-limit=512"):
+                     "--memory=3g", "--memory-swap=3g", "--pids-limit=512", "--pull=never"):
             self.assertIn(flag, argv[:image])
+        self.assertEqual(argv[argv.index("--name") + 1], f"re-lab-agent-{JOB}")
+        self.assertTrue(any(flag.startswith("--cpus=") for flag in argv[:image]))
         self.assertEqual(argv[argv.index("--label") + 1], "re-lab.role=agent")
         labels = [argv[index + 1] for index, value in enumerate(argv) if value == "--label"]
         self.assertEqual(labels, ["re-lab.role=agent", f"re-lab.job={JOB}"])
         self.assertIn("--log-driver=none", argv[:image])
         self.assertEqual(argv[argv.index("--network") + 1], "re-lab_re-internal")
-        self.assertEqual(argv[argv.index("--env-file") + 1], str(self.models))
+        # The agent gets a per-job, root-only env file built from validated models.env lines,
+        # never the operator's file itself.
+        self.assertEqual(argv[argv.index("--env-file") + 1], str(work / "agent.env"))
 
     def test_compose_keeps_only_proxy_running_and_images_build_only(self):
         text = (CONTAINER / "compose.yaml").read_text(encoding="utf-8")
@@ -237,8 +245,12 @@ class ActiveExecutionTests(DispatcherTestBase):
         process.wait.return_value = 0
         with mock.patch.object(self.dispatcher.subprocess, "Popen", return_value=process), \
              mock.patch.object(self.dispatcher.executor, "process_pending", return_value=0) as pending, \
+             mock.patch.object(self.dispatcher.executor, "contain_container") as contain, \
              mock.patch.object(self.dispatcher.time, "sleep"):
             self.dispatcher.run_agent(self.cfg, JOB, wall_timeout_s=30)
+        # A clean client exit is still followed by proof that the exact container is gone.
+        contain.assert_called_once_with(("docker",), self.root / "jobs" / "work" / JOB / "agent.cid")
+        self.assertFalse((self.root / "jobs" / "work" / JOB / "agent.env").exists())
         self.assertGreaterEqual(pending.call_count, 1)
         for call in pending.call_args_list:
             self.assertEqual(call.args[0].requests_dir,
@@ -381,12 +393,12 @@ class PublicationTests(DispatcherTestBase):
         outside = self.root / "outside-secret"
         outside.write_text("TOP-SECRET", encoding="utf-8")
         os.symlink(outside, work / "out" / "evidence" / "leak.txt")
-        self.dispatcher.publish_job(self.cfg, JOB)
+        self.publish_prepared_job()
         self.assertFalse((self.root / "reports" / JOB / "evidence" / "leak.txt").exists())
 
     def test_publish_redacts_exact_secret_values_from_text(self):
         self.prepare_output()
-        result = self.dispatcher.publish_job(self.cfg, JOB)
+        result = self.publish_prepared_job()
         report = self.root / "reports" / JOB
         self.assertEqual(result["cost_usd"], 0.4)
         for path in (report / "report.md", report / "evidence" / "E1.txt"):
@@ -402,7 +414,7 @@ class PublicationTests(DispatcherTestBase):
         with mock.patch.object(self.dispatcher, "MAX_REPORT_BYTES", 10), \
              mock.patch.object(self.dispatcher, "MAX_EVIDENCE_BYTES", 10), \
              mock.patch.object(self.dispatcher, "MAX_SESSION_BYTES", 10):
-            self.dispatcher.publish_job(self.cfg, JOB)
+            self.publish_prepared_job()
         report = self.root / "reports" / JOB
         self.assertFalse((report / "report.md").exists())
         self.assertFalse((report / "evidence" / "E1.txt").exists())
@@ -464,7 +476,7 @@ class PortedClaimAndVerificationTests(DispatcherTestBase):
         first = self.dispatcher.claim_job(self.cfg, JOB)
         with self.assertRaises(self.dispatcher.JobError):
             self.dispatcher.claim_job(self.cfg, JOB)
-        self.assertTrue((first / "job.json").is_file())
+        self.assertTrue((first / "upload" / "job.json").is_file())
 
     def test_unsafe_job_ids_are_rejected(self):
         for job_id in ("../escape", "a/b", "UPPER-CASE-1", "short"):
@@ -546,23 +558,26 @@ class PortedAgentLaunchTests(DispatcherTestBase):
     def test_agent_home_and_tmp_are_per_job_tmpfs_mounts(self):
         argv = self.dispatcher.build_agent_argv(self.cfg, JOB)
         tmpfs = [argv[index + 1] for index, value in enumerate(argv) if value == "--tmpfs"]
-        self.assertEqual(tmpfs, ["/home/re:size=512m", "/tmp:size=512m"])
+        self.assertEqual(tmpfs, ["/home/re:size=512m,noexec,nosuid,nodev",
+                                 "/tmp:size=512m,noexec,nosuid,nodev"])
 
 
 class PortedHostOutcomeTests(DispatcherTestBase):
     def test_exit_zero_three_other_and_timeout_map_to_final_statuses(self):
         cases = (
             ("job-outcome-0001", "done", 0, False, "done"),
-            ("job-outcome-0002", "cost-cap", 3, False, "cost-cap"),
+            ("job-outcome-0002", "cost-cap", 0, False, "cost-cap"),
             ("job-outcome-0003", "done", 7, False, "failed"),
             ("job-outcome-0004", "done", 137, True, "time-cap"),
+            ("job-outcome-0005", "cost-cap", 1, False, "failed"),
+            ("job-outcome-0006", "time-cap", 0, False, "time-cap"),
         )
         for job_id, runner_status, exit_code, timed_out, expected in cases:
             with self.subTest(expected=expected):
                 self.make_job(job_id)
                 self.dispatcher.claim_job(self.cfg, job_id)
 
-                def run_agent(_cfg, active_id):
+                def run_agent(_cfg, active_id, *, environment, feed):
                     work = self.root / "jobs" / "work" / active_id
                     (work / "out" / "report.md").write_text("report", encoding="utf-8")
                     (work / "out" / "status.json").write_text(json.dumps({
@@ -593,7 +608,7 @@ class PortedPublicationContractTests(DispatcherTestBase):
 
     def test_result_json_records_the_contract_fields(self):
         self.prepared_output()
-        result = self.dispatcher.publish_job(self.cfg, JOB)
+        result = self.publish_prepared_job()
         self.assertEqual(set(result), {
             "job_id", "status", "exit_code", "cost_usd", "cost_incomplete",
             "model", "started", "ended",
@@ -603,7 +618,7 @@ class PortedPublicationContractTests(DispatcherTestBase):
 
     def test_failed_result_keeps_the_contract_fields(self):
         self.prepared_output("failed")
-        result = self.dispatcher.publish_job(self.cfg, JOB)
+        result = self.publish_prepared_job()
         self.assertTrue({
             "job_id", "status", "exit_code", "cost_usd", "cost_incomplete",
             "model", "started", "ended",
@@ -612,7 +627,7 @@ class PortedPublicationContractTests(DispatcherTestBase):
 
     def test_exception_text_never_reaches_result_json(self):
         self.prepared_output("failed", {"error": "LEAKED-EXCEPTION-TEXT"})
-        self.dispatcher.publish_job(self.cfg, JOB)
+        self.publish_prepared_job()
         text = (self.cfg.reports / JOB / "result.json").read_text(encoding="utf-8")
         self.assertNotIn("LEAKED-EXCEPTION-TEXT", text)
 
@@ -646,7 +661,7 @@ class PortedPublicationContractTests(DispatcherTestBase):
         work = self.prepared_output()
         line = '{"message":{"role":"assistant","usage":{"cost":{"total":0.2}}}}\n'
         (work / "session" / "one.jsonl").write_text(line, encoding="utf-8")
-        self.dispatcher.publish_job(self.cfg, JOB)
+        self.publish_prepared_job()
         published = self.cfg.reports / JOB / "session.jsonl"
         self.assertEqual(published.read_text(encoding="utf-8"), line)
 
@@ -713,6 +728,7 @@ class IncrementalPublishWalkTests(DispatcherTestBase):
 
         destination = self.root / "evidence-destination"
         destination.mkdir()
+        (self.root / "evidence-source").mkdir()
         with mock.patch.object(os, "scandir", return_value=Entries()), \
              mock.patch.object(os, "listdir",
                                side_effect=AssertionError("directory was materialized")):
@@ -782,7 +798,7 @@ class FinalReviewRegressionTests(DispatcherTestBase):
         self.make_job()
         self.dispatcher.claim_job(self.cfg, JOB)
 
-        def agent(_cfg, job_id):
+        def agent(_cfg, job_id, *, environment, feed):
             session = self.cfg.work / job_id / "session" / "one.jsonl"
             message = {
                 "message": {"role": "assistant", "usage": {"cost": {"total": 0.4}}}
@@ -800,7 +816,7 @@ class FinalReviewRegressionTests(DispatcherTestBase):
         self.make_job()
         self.dispatcher.claim_job(self.cfg, JOB)
 
-        def agent(_cfg, job_id):
+        def agent(_cfg, job_id, *, environment, feed):
             status = self.cfg.work / job_id / "out" / "status.json"
             status.write_text(
                 json.dumps({"job_id": job_id, "status": []}), encoding="utf-8")
@@ -841,7 +857,7 @@ class FinalReviewRegressionTests(DispatcherTestBase):
         with session.open("wb") as handle:
             handle.write(line)
             handle.truncate(60 * 1024 ** 2)
-        result = self.dispatcher.publish_job(self.cfg, JOB)
+        result = self.publish_prepared_job()
         self.assertEqual(result["cost_usd"], 0.75)
         self.assertIs(result["cost_incomplete"], True)
         self.assertLessEqual(
@@ -948,7 +964,7 @@ class FinalReviewRegressionTests(DispatcherTestBase):
         (work / "out" / "report.md").write_text("report", encoding="utf-8")
         (work / "out" / "evidence").mkdir()
         (work / "out" / "evidence" / "proof.txt").write_text("proof", encoding="utf-8")
-        self.dispatcher.publish_job(self.cfg, JOB)
+        self.publish_prepared_job()
         report = self.cfg.reports / JOB
         for path in report.rglob("*"):
             expected = 0o750 if path.is_dir() else 0o640
