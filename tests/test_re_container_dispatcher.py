@@ -80,6 +80,10 @@ class DispatcherTestBase(unittest.TestCase):
         self.dispatcher.prepare_job(self.cfg, job_id)
         return work
 
+    def publish_prepared_job(self):
+        keys = self.dispatcher._read_job_environment(self.cfg)
+        return self.dispatcher.publish_job(self.cfg, JOB, secrets=keys.secrets)
+
 
 class EgressPolicyTests(unittest.TestCase):
     def test_squid_rules_block_literal_ips_before_the_domain_allow(self):
@@ -389,12 +393,12 @@ class PublicationTests(DispatcherTestBase):
         outside = self.root / "outside-secret"
         outside.write_text("TOP-SECRET", encoding="utf-8")
         os.symlink(outside, work / "out" / "evidence" / "leak.txt")
-        self.dispatcher.publish_job(self.cfg, JOB)
+        self.publish_prepared_job()
         self.assertFalse((self.root / "reports" / JOB / "evidence" / "leak.txt").exists())
 
     def test_publish_redacts_exact_secret_values_from_text(self):
         self.prepare_output()
-        result = self.dispatcher.publish_job(self.cfg, JOB)
+        result = self.publish_prepared_job()
         report = self.root / "reports" / JOB
         self.assertEqual(result["cost_usd"], 0.4)
         for path in (report / "report.md", report / "evidence" / "E1.txt"):
@@ -410,7 +414,7 @@ class PublicationTests(DispatcherTestBase):
         with mock.patch.object(self.dispatcher, "MAX_REPORT_BYTES", 10), \
              mock.patch.object(self.dispatcher, "MAX_EVIDENCE_BYTES", 10), \
              mock.patch.object(self.dispatcher, "MAX_SESSION_BYTES", 10):
-            self.dispatcher.publish_job(self.cfg, JOB)
+            self.publish_prepared_job()
         report = self.root / "reports" / JOB
         self.assertFalse((report / "report.md").exists())
         self.assertFalse((report / "evidence" / "E1.txt").exists())
@@ -573,7 +577,7 @@ class PortedHostOutcomeTests(DispatcherTestBase):
                 self.make_job(job_id)
                 self.dispatcher.claim_job(self.cfg, job_id)
 
-                def run_agent(_cfg, active_id):
+                def run_agent(_cfg, active_id, *, environment, feed):
                     work = self.root / "jobs" / "work" / active_id
                     (work / "out" / "report.md").write_text("report", encoding="utf-8")
                     (work / "out" / "status.json").write_text(json.dumps({
@@ -604,7 +608,7 @@ class PortedPublicationContractTests(DispatcherTestBase):
 
     def test_result_json_records_the_contract_fields(self):
         self.prepared_output()
-        result = self.dispatcher.publish_job(self.cfg, JOB)
+        result = self.publish_prepared_job()
         self.assertEqual(set(result), {
             "job_id", "status", "exit_code", "cost_usd", "cost_incomplete",
             "model", "started", "ended",
@@ -614,7 +618,7 @@ class PortedPublicationContractTests(DispatcherTestBase):
 
     def test_failed_result_keeps_the_contract_fields(self):
         self.prepared_output("failed")
-        result = self.dispatcher.publish_job(self.cfg, JOB)
+        result = self.publish_prepared_job()
         self.assertTrue({
             "job_id", "status", "exit_code", "cost_usd", "cost_incomplete",
             "model", "started", "ended",
@@ -623,7 +627,7 @@ class PortedPublicationContractTests(DispatcherTestBase):
 
     def test_exception_text_never_reaches_result_json(self):
         self.prepared_output("failed", {"error": "LEAKED-EXCEPTION-TEXT"})
-        self.dispatcher.publish_job(self.cfg, JOB)
+        self.publish_prepared_job()
         text = (self.cfg.reports / JOB / "result.json").read_text(encoding="utf-8")
         self.assertNotIn("LEAKED-EXCEPTION-TEXT", text)
 
@@ -657,7 +661,7 @@ class PortedPublicationContractTests(DispatcherTestBase):
         work = self.prepared_output()
         line = '{"message":{"role":"assistant","usage":{"cost":{"total":0.2}}}}\n'
         (work / "session" / "one.jsonl").write_text(line, encoding="utf-8")
-        self.dispatcher.publish_job(self.cfg, JOB)
+        self.publish_prepared_job()
         published = self.cfg.reports / JOB / "session.jsonl"
         self.assertEqual(published.read_text(encoding="utf-8"), line)
 
@@ -794,7 +798,7 @@ class FinalReviewRegressionTests(DispatcherTestBase):
         self.make_job()
         self.dispatcher.claim_job(self.cfg, JOB)
 
-        def agent(_cfg, job_id):
+        def agent(_cfg, job_id, *, environment, feed):
             session = self.cfg.work / job_id / "session" / "one.jsonl"
             message = {
                 "message": {"role": "assistant", "usage": {"cost": {"total": 0.4}}}
@@ -812,7 +816,7 @@ class FinalReviewRegressionTests(DispatcherTestBase):
         self.make_job()
         self.dispatcher.claim_job(self.cfg, JOB)
 
-        def agent(_cfg, job_id):
+        def agent(_cfg, job_id, *, environment, feed):
             status = self.cfg.work / job_id / "out" / "status.json"
             status.write_text(
                 json.dumps({"job_id": job_id, "status": []}), encoding="utf-8")
@@ -853,7 +857,7 @@ class FinalReviewRegressionTests(DispatcherTestBase):
         with session.open("wb") as handle:
             handle.write(line)
             handle.truncate(60 * 1024 ** 2)
-        result = self.dispatcher.publish_job(self.cfg, JOB)
+        result = self.publish_prepared_job()
         self.assertEqual(result["cost_usd"], 0.75)
         self.assertIs(result["cost_incomplete"], True)
         self.assertLessEqual(
@@ -960,7 +964,7 @@ class FinalReviewRegressionTests(DispatcherTestBase):
         (work / "out" / "report.md").write_text("report", encoding="utf-8")
         (work / "out" / "evidence").mkdir()
         (work / "out" / "evidence" / "proof.txt").write_text("proof", encoding="utf-8")
-        self.dispatcher.publish_job(self.cfg, JOB)
+        self.publish_prepared_job()
         report = self.cfg.reports / JOB
         for path in report.rglob("*"):
             expected = 0o750 if path.is_dir() else 0o640

@@ -18,8 +18,6 @@ Publication: bounded, redacted copies of the report, evidence and session, and a
 ``--init-layout``, ``--prune DAYS`` and ``--cleanup-only``.
 """
 import argparse
-import base64
-import binascii
 import hashlib
 import json
 import math
@@ -80,8 +78,6 @@ KILL_GRACE_S = 10
 WORKER_JOIN_S = 120
 HEARTBEAT_TICKS = 120
 IDLE_HEARTBEAT_S = 15
-MIN_SECRET_BYTES = 8
-MIN_ENCODED_SECRET = 12
 COPY_CHUNK = 1024 * 1024
 AGENT_STATUSES = frozenset({"done", "cost-cap", "time-cap", "failed", "needs-vm-lane"})
 ALLOWED_STATUSES = AGENT_STATUSES
@@ -111,7 +107,6 @@ FILE_READ_FLAGS = executor.FILE_READ_FLAGS
 FILE_CREATE_FLAGS = executor.FILE_CREATE_FLAGS
 
 STOP = threading.Event()
-_FEEDS: dict = {}
 _SKIPPED: set = set()
 
 
@@ -742,23 +737,26 @@ def _console_env(cfg: Config) -> list:
     return [] if data is None else _env_entries(data, "console models.env")
 
 
-def agent_environment(cfg: Config) -> list:
-    """Root models.env overlaid with the console's keys (the console wins for a name)."""
-    merged = dict(_root_env(cfg))
-    merged.update(dict(_console_env(cfg)))
-    return sorted(merged.items())
+@dataclass(frozen=True, repr=False)
+class _JobEnvironment:
+    entries: tuple[tuple[str, str], ...]
+    secrets: tuple[bytes, ...]
 
 
-def _secret_values(cfg: Config) -> tuple:
-    """Every configured value long enough to be a credential, from both env files."""
-    values = {value.encode("utf-8") for _name, value in _root_env(cfg) + _console_env(cfg)}
-    return tuple(sorted((v for v in values if len(v) >= MIN_SECRET_BYTES), key=len, reverse=True))
+def _read_job_environment(cfg: Config) -> _JobEnvironment:
+    """Take one snapshot for launch, live events, and all publication paths."""
+    entries = _root_env(cfg) + _console_env(cfg)
+    values = {value.encode("utf-8") for _, value in entries}
+    # The console wins for injection. Shadowed values still need redaction.
+    return _JobEnvironment(
+        tuple(sorted(dict(entries).items())),
+        tuple(sorted(v for v in values if len(v) >= livefeed.MIN_SECRET_BYTES)))
 
 
-def _write_agent_env(cfg: Config, job_id: str) -> Path:
+def _write_agent_env(cfg: Config, job_id: str, environment: _JobEnvironment) -> Path:
     path = cfg.work / check_job_id(job_id) / "agent.env"
     path.unlink(missing_ok=True)
-    lines = "".join(f"{name}={value}\n" for name, value in agent_environment(cfg))
+    lines = "".join(f"{name}={value}\n" for name, value in environment.entries)
     fd = os.open(path, FILE_CREATE_FLAGS, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(lines)
@@ -903,9 +901,11 @@ def _heartbeat(cfg: Config, state: str, active_job: str | None = None) -> None:
         queue=_queue_length(cfg), free_bytes=free_bytes, free_inodes=free_inodes)
 
 
-def run_agent(cfg: Config, job_id: str, wall_timeout_s: float = WALL_TIMEOUT_S) -> AgentResult:
+def run_agent(cfg: Config, job_id: str, wall_timeout_s: float = WALL_TIMEOUT_S, *,
+              environment: _JobEnvironment | None = None, feed=None) -> AgentResult:
     work = cfg.work / check_job_id(job_id)
-    feed = _FEEDS.get(job_id) or livefeed.NullFeed()
+    if feed is None:
+        feed = livefeed.NullFeed()
     policy = ExecPolicyGate(cfg, job_id, feed) if cfg.console_uid is not None else None
     exec_cfg = executor_config(cfg, job_id, policy=policy, observer=feed.emit)
     request_stop = threading.Event()
@@ -934,9 +934,9 @@ def run_agent(cfg: Config, job_id: str, wall_timeout_s: float = WALL_TIMEOUT_S) 
 
     request_worker = threading.Thread(
         target=serve_requests, name=f"re-exec-{job_id}", daemon=False)
-    env_file = _write_agent_env(cfg, job_id)
-    (work / "agent.cid").unlink(missing_ok=True)
+    env_file = _write_agent_env(cfg, job_id, environment or _read_job_environment(cfg))
     try:
+        (work / "agent.cid").unlink(missing_ok=True)
         process = subprocess.Popen(
             build_agent_argv(cfg, job_id), shell=False, stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -956,14 +956,10 @@ def run_agent(cfg: Config, job_id: str, wall_timeout_s: float = WALL_TIMEOUT_S) 
         while process.poll() is None:
             if request_errors:
                 request_failed = True
-                request_stop.set()
-                contain_agent()
                 break
             if time.monotonic() - started >= wall_timeout_s:
                 timed_out = True
                 stop_reason = "time-cap"
-                request_stop.set()
-                contain_agent()
                 break
             reason = _stop_reason(cfg, job_id)
             if reason is not None:
@@ -973,8 +969,6 @@ def run_agent(cfg: Config, job_id: str, wall_timeout_s: float = WALL_TIMEOUT_S) 
                 elif reason == "storage-cap":
                     free_bytes, free_inodes, _low = storage_state(cfg)
                     feed.emit("storage.low", free_bytes=free_bytes, free_inodes=free_inodes)
-                request_stop.set()
-                contain_agent()
                 break
             tailer.poll()
             tick += 1
@@ -982,12 +976,14 @@ def run_agent(cfg: Config, job_id: str, wall_timeout_s: float = WALL_TIMEOUT_S) 
                 _heartbeat(cfg, "running", job_id)
             time.sleep(POLL_INTERVAL_S)
         request_stop.set()
+        if stop_reason is not None or request_failed:
+            executor.stop_docker_client(process)
+        exit_code = process.wait(timeout=KILL_GRACE_S)
+        # Only a reaped client can no longer start a container after the absence check.
+        contain_agent()
         request_worker.join(WORKER_JOIN_S)
         if request_worker.is_alive():
             raise RuntimeError("execution worker did not stop after cancellation")
-        exit_code = process.wait(timeout=KILL_GRACE_S)
-        if not containment_attempted:
-            contain_agent()  # the client can exit without its container; prove it is gone
         for _ in range(8):
             tailer.poll()
         if request_errors:
@@ -1006,6 +1002,15 @@ def run_agent(cfg: Config, job_id: str, wall_timeout_s: float = WALL_TIMEOUT_S) 
         except Exception as cleanup_error:
             failure = failure or executor.ContainmentError(
                 f"execution worker cancellation failed: {type(cleanup_error).__name__}")
+        if not containment_attempted:
+            try:
+                executor.stop_docker_client(process)
+            except executor.ContainmentError as client_error:
+                failure = failure or client_error
+            try:
+                contain_agent()
+            except executor.ContainmentError as containment_error:
+                failure = failure or containment_error
         if worker_started:
             try:
                 request_worker.join(WORKER_JOIN_S)
@@ -1015,15 +1020,6 @@ def run_agent(cfg: Config, job_id: str, wall_timeout_s: float = WALL_TIMEOUT_S) 
             except Exception as cleanup_error:
                 failure = failure or executor.ContainmentError(
                     f"execution worker cleanup failed: {type(cleanup_error).__name__}")
-        if not containment_attempted:
-            try:
-                contain_agent()
-            except executor.ContainmentError as containment_error:
-                failure = containment_error
-        try:
-            executor.stop_docker_client(process)
-        except executor.ContainmentError as client_error:
-            failure = failure or client_error
         if failure is not None:
             raise failure
         raise executor.ContainmentError(
@@ -1035,30 +1031,10 @@ def run_agent(cfg: Config, job_id: str, wall_timeout_s: float = WALL_TIMEOUT_S) 
 # ---------------------------------------------------------------------------------------------
 # Redaction and publication.
 
-def _encoded_variants(secret: bytes) -> set:
-    """Exact, hex and base64 (all three alignments, both alphabets) forms of one secret."""
-    variants = {secret, binascii.hexlify(secret), binascii.hexlify(secret).upper()}
-    for encode in (base64.b64encode, base64.urlsafe_b64encode):
-        for offset in range(3):
-            encoded = encode(bytes(offset) + secret)
-            start = -(-8 * offset // 6)
-            end = (8 * (offset + len(secret))) // 6
-            core = encoded[start:end]
-            if len(core) >= MIN_ENCODED_SECRET:
-                variants.add(core)
-    return {variant for variant in variants if len(variant) >= MIN_SECRET_BYTES}
-
-
 class _Redactor:
     def __init__(self, secrets: tuple):
-        variants = set()
-        for secret in secrets:
-            if isinstance(secret, str):
-                secret = secret.encode("utf-8")
-            if len(secret) >= MIN_SECRET_BYTES:
-                variants |= _encoded_variants(secret)
-        ordered = sorted(variants, key=len, reverse=True)
-        self.pattern = re.compile(b"|".join(re.escape(v) for v in ordered)) if ordered else None
+        variants = livefeed.secret_variants(secrets)
+        self.pattern = re.compile(b"|".join(re.escape(v) for v in variants)) if variants else None
 
     def text(self, data: bytes) -> bytes:
         return self.pattern.sub(b"[REDACTED]", data) if self.pattern else data
@@ -1468,11 +1444,10 @@ def _default_result(cfg: Config, job_id: str) -> dict:
     return result
 
 
-def publish_job(cfg: Config, job_id: str, status: dict | None = None) -> dict:
+def publish_job(cfg: Config, job_id: str, status: dict | None = None, *, secrets: tuple) -> dict:
     work = cfg.work / check_job_id(job_id)
     report = cfg.reports / job_id
     _make_report_dir(report, cfg.report_gid)
-    secrets = _secret_values(cfg)
     redactor = _redactor(secrets)
     result = dict(status) if status is not None else _default_result(cfg, job_id)
     report_data = _read_regular(work / "out" / "report.md", MAX_REPORT_BYTES)
@@ -1495,13 +1470,9 @@ def publish_job(cfg: Config, job_id: str, status: dict | None = None) -> dict:
 # ---------------------------------------------------------------------------------------------
 # Job lifecycle.
 
-def _open_feed(cfg: Config, job_id: str):
+def _open_feed(cfg: Config, job_id: str, secrets: tuple):
     if not cfg.live:
         return livefeed.NullFeed()
-    try:
-        secrets = _secret_values(cfg)
-    except DispatcherError:
-        secrets = ()
     return livefeed.LiveFeed(cfg.live_root, job_id, cfg.report_gid, secrets).open()
 
 
@@ -1530,7 +1501,8 @@ def recover_interrupted(cfg: Config) -> list[str]:
         except OSError as exc:
             _warn(f"{name}: recovery result could not be written: {type(exc).__name__}")
             continue
-        feed = _open_feed(cfg, name)
+        # Recovery emits only dispatcher-owned status and cost, never old job payloads.
+        feed = _open_feed(cfg, name, ())
         _finish_feed(feed, result)
         feed.close()
         recovered.append(name)
@@ -1603,39 +1575,43 @@ def _files_events(feed, meta: dict) -> None:
 
 
 def run_claimed_job(cfg: Config, job_id: str) -> dict:
-    feed = _open_feed(cfg, job_id)
-    _FEEDS[job_id] = feed
+    check_job_id(job_id)
     try:
-        return _run_claimed_job(cfg, job_id, feed)
+        environment = _read_job_environment(cfg)
+    except (DispatcherError, OSError):
+        result = _terminal_status(job_id, "failed", "model environment unreadable")
+        return _write_result(cfg.reports / job_id / "result.json", result, report_gid=cfg.report_gid)
+    feed = _open_feed(cfg, job_id, environment.secrets)
+    try:
+        return _run_claimed_job(cfg, job_id, feed, environment)
     finally:
-        _FEEDS.pop(job_id, None)
         feed.close()
 
 
-def _reject(cfg: Config, job_id: str, feed, status: str, error: str) -> dict:
+def _reject(cfg: Config, job_id: str, feed, secrets: tuple, status: str, error: str) -> dict:
     result = _terminal_status(job_id, status, error)
     feed.emit("job.rejected", status=status, error=error)
-    written = _write_result(cfg.reports / job_id / "result.json", result,
-                            report_gid=cfg.report_gid)
+    written = _write_result(cfg.reports / job_id / "result.json", result, secrets, cfg.report_gid)
     _finish_feed(feed, written)
     return written
 
 
-def _run_claimed_job(cfg: Config, job_id: str, feed) -> dict:
+def _run_claimed_job(cfg: Config, job_id: str, feed, environment: _JobEnvironment) -> dict:
+    secrets = environment.secrets
     result_path = cfg.reports / job_id / "result.json"
     feed.emit("job.claimed")
     _heartbeat(cfg, "running", job_id)
     if _cancel_requested(cfg, job_id):
         _clear_cancel(cfg, job_id)
-        return _reject(cfg, job_id, feed, "cancelled", "cancelled before start")
+        return _reject(cfg, job_id, feed, secrets, "cancelled", "cancelled before start")
     try:
         meta = prepare_job(cfg, job_id)
     except JobError as exc:
-        return _reject(cfg, job_id, feed, "rejected-job", str(exc))
+        return _reject(cfg, job_id, feed, secrets, "rejected-job", str(exc))
     except HashMismatch as exc:
-        return _reject(cfg, job_id, feed, "rejected-hash", str(exc))
+        return _reject(cfg, job_id, feed, secrets, "rejected-hash", str(exc))
     except (OSError, executor.RequestError) as exc:
-        return _reject(cfg, job_id, feed, "failed",
+        return _reject(cfg, job_id, feed, secrets, "failed",
                        f"host preparation failed: {type(exc).__name__}")
     _verified_event(feed, meta)
     _files_events(feed, meta)
@@ -1643,7 +1619,7 @@ def _run_claimed_job(cfg: Config, job_id: str, feed) -> dict:
     feed.emit("agent.started", model=model)
     started = utc_now()
     try:
-        agent = run_agent(cfg, job_id)
+        agent = run_agent(cfg, job_id, environment=environment, feed=feed)
     except executor.ContainmentError:
         _record_containment_failure(cfg, job_id, feed)
         raise
@@ -1652,7 +1628,7 @@ def _run_claimed_job(cfg: Config, job_id: str, feed) -> dict:
             job_id, "failed", f"agent execution failed: {type(exc).__name__}")
         status["cost_usd"], status["cost_incomplete"] = _scan_session_cost(
             cfg.work / job_id / "session")
-        written = _write_result(result_path, status, report_gid=cfg.report_gid)
+        written = _write_result(result_path, status, secrets, cfg.report_gid)
         _finish_feed(feed, written)
         return written
     ended = utc_now()
@@ -1669,7 +1645,7 @@ def _run_claimed_job(cfg: Config, job_id: str, feed) -> dict:
     if agent.stop_reason == "cancelled":
         _clear_cancel(cfg, job_id)
     try:
-        published = publish_job(cfg, job_id, status)
+        published = publish_job(cfg, job_id, status, secrets=secrets)
     except executor.ContainmentError:
         _record_containment_failure(cfg, job_id, feed)
         raise
@@ -1678,7 +1654,7 @@ def _run_claimed_job(cfg: Config, job_id: str, feed) -> dict:
         status.update(
             status="failed", cost_usd=cost, cost_incomplete=True, ended=utc_now(),
             error=f"publication failed: {type(exc).__name__}")
-        published = _write_result(result_path, status, report_gid=cfg.report_gid)
+        published = _write_result(result_path, status, secrets, cfg.report_gid)
     if published.get("status") == "storage-cap":
         for name in ("out", "session"):
             try:

@@ -210,7 +210,7 @@ class ResultAndRedactionTests(DispatcherTestBase):
         self.make_job()
         self.dispatcher.claim_job(self.cfg, JOB)
 
-        def agent(_cfg, job_id):
+        def agent(_cfg, job_id, *, environment, feed):
             (self.cfg.work / job_id / "out" / "status.json").write_text(json.dumps({
                 "job_id": job_id, "status": "done", "exit_code": "forged",
                 "model": "evil", "started": "1999", "ended": "x"}), encoding="utf-8")
@@ -235,7 +235,7 @@ class ResultAndRedactionTests(DispatcherTestBase):
         (evidence / "E2-b64.txt").write_bytes(b"blob " + encoded)
         (evidence / "E3.bin").write_bytes(b"\x00\x01" + SECRET.encode() + b"\x02")
         (work / "out" / "report.md").write_text("value 1 is true", encoding="utf-8")
-        self.dispatcher.publish_job(self.cfg, JOB)
+        self.publish_prepared_job()
         published = self.cfg.reports / JOB / "evidence"
         for name in ("E7-main-decompile.c", "E1-strings", "E2-b64.txt"):
             text = (published / name).read_text(encoding="utf-8")
@@ -275,8 +275,8 @@ class AgentEnvironmentTests(DispatcherTestBase):
         with mock.patch.object(self.dispatcher, "_console_env",
                                return_value=[("OPENAI_API_KEY", "console-value-123456"),
                                              ("OPENROUTER_API_KEY", "or-value-1234567")]):
-            env = dict(self.dispatcher.agent_environment(cfg))
-            secrets = self.dispatcher._secret_values(cfg)
+            snapshot = self.dispatcher._read_job_environment(cfg)
+            env, secrets = dict(snapshot.entries), snapshot.secrets
         self.assertEqual(env, {"OPENAI_API_KEY": "console-value-123456",
                                "OPENROUTER_API_KEY": "or-value-1234567"})
         self.assertIn(b"root-value-123456", secrets)
@@ -298,7 +298,8 @@ class AgentEnvironmentTests(DispatcherTestBase):
     @needs_fd_ops
     def test_agent_env_file_is_private_and_removed_after_the_run(self):
         self.prepared()
-        path = self.dispatcher._write_agent_env(self.cfg, JOB)
+        path = self.dispatcher._write_agent_env(
+            self.cfg, JOB, self.dispatcher._read_job_environment(self.cfg))
         self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
         self.assertIn("TEST_SECRET=PLANTED-SENTINEL\n", path.read_text(encoding="utf-8"))
 
@@ -308,8 +309,18 @@ class StopConditionTests(DispatcherTestBase):
     def run_with(self, *, stop=None, low=False, cancel=False):
         self.prepared()
         process = mock.Mock()
-        process.poll.return_value = None
-        process.wait.return_value = 137
+        order = []
+        process.kill.side_effect = lambda: order.append("stop requested")
+        process.poll.side_effect = lambda: 137 if "client exited" in order else None
+
+        def wait(timeout):
+            if "stop requested" not in order:
+                raise subprocess.TimeoutExpired("fixture-client", timeout)
+            if "client exited" not in order:
+                order.append("client exited")
+            return 137
+
+        process.wait.side_effect = wait
         if cancel:
             self.cfg.cancel_dir.mkdir(parents=True, exist_ok=True)
             (self.cfg.cancel_dir / JOB).write_text("", encoding="utf-8")
@@ -321,8 +332,10 @@ class StopConditionTests(DispatcherTestBase):
                                return_value=(1, 1, low)), \
              mock.patch.object(self.dispatcher.time, "sleep"), \
              mock.patch.object(self.dispatcher.executor, "contain_container") as contain:
+            contain.side_effect = lambda *_: order.append("absence checked")
             result = self.dispatcher.run_agent(self.cfg, JOB, wall_timeout_s=3600)
         contain.assert_called_once()
+        self.assertEqual(order, ["stop requested", "client exited", "absence checked"])
         return result
 
     def test_storage_reserve_contains_the_agent(self):
@@ -372,7 +385,7 @@ class LiveFeedIntegrationTests(DispatcherTestBase):
         self.make_job()
         self.dispatcher.claim_job(self.cfg, JOB)
 
-        def agent(_cfg, job_id):
+        def agent(_cfg, job_id, *, environment, feed):
             work = self.cfg.work / job_id
             (work / "out" / "status.json").write_text(json.dumps(
                 {"job_id": job_id, "status": "done"}), encoding="utf-8")
@@ -392,6 +405,58 @@ class LiveFeedIntegrationTests(DispatcherTestBase):
                          {"target/tool", "question.md"})
         self.assertEqual(feed[2]["entries"][0]["sha256"].__len__(), 64)
         self.assertNotIn("PLANTED-SENTINEL", json.dumps(feed))
+
+    def test_rotating_keys_affects_the_next_job_not_the_active_job(self):
+        first, second = "fixture-first-credential", "fixture-next-credential"
+        self.models.write_text(f"TEST_SECRET={first}\n", encoding="utf-8")
+        injected = []
+        prepare = self.dispatcher.prepare_job
+        run_agent = self.dispatcher.run_agent
+
+        def rotate_then_prepare(cfg, job_id):
+            self.models.write_text(f"TEST_SECRET={second}\n", encoding="utf-8")
+            return prepare(cfg, job_id)
+
+        for job_id, expected in ((JOB, first), (JOB + "-next", second)):
+            self.make_job(job_id)
+            work = self.dispatcher.claim_job(self.cfg, job_id)
+
+            def launch(*_args, **_kwargs):
+                value = (work / "agent.env").read_text(encoding="utf-8").strip().split("=", 1)[1]
+                injected.append(value)
+                (work / "out" / "report.md").write_text("observed " + value, encoding="utf-8")
+                (work / "out" / "status.json").write_text(
+                    json.dumps({"job_id": job_id, "status": "done"}), encoding="utf-8")
+                record = {"type": "message", "message": {"role": "assistant", "content": value}}
+                (work / "session" / "one.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
+                return mock.Mock(**{"poll.return_value": 0, "wait.return_value": 0})
+
+            def simulated_agent(cfg, active_id, **options):
+                with mock.patch.object(self.dispatcher.subprocess, "Popen", side_effect=launch), \
+                     mock.patch.object(self.dispatcher.executor, "process_pending", return_value=0), \
+                     mock.patch.object(self.dispatcher.executor, "contain_container"):
+                    return run_agent(cfg, active_id, **options)
+
+            with mock.patch.object(self.dispatcher, "prepare_job", side_effect=rotate_then_prepare), \
+                 mock.patch.object(self.dispatcher, "run_agent", side_effect=simulated_agent):
+                result = self.dispatcher.run_claimed_job(self.cfg, job_id)
+            self.assertEqual(result["status"], "done")
+            self.assertEqual(injected[-1], expected)
+            self.assertEqual((self.cfg.reports / job_id / "report.md").read_text(),
+                             "observed [REDACTED]")
+            texts = [e["text"] for e in events(self.cfg.live_root / job_id / "events.jsonl")
+                     if e["type"] == "agent.text"]
+            self.assertEqual(texts, ["[REDACTED]"])
+
+    def test_unreadable_keys_never_launch_or_publish_unfiltered_job_events(self):
+        self.make_job()
+        self.dispatcher.claim_job(self.cfg, JOB)
+        self.models.unlink()
+        with mock.patch.object(self.dispatcher, "run_agent") as launch:
+            result = self.dispatcher.run_claimed_job(self.cfg, JOB)
+        self.assertEqual(result["status"], "failed")
+        launch.assert_not_called()
+        self.assertFalse((self.cfg.live_root / JOB / "events.jsonl").exists())
 
     def test_rejected_jobs_report_through_the_feed(self):
         job = self.make_job()

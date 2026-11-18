@@ -16,6 +16,7 @@ is opened relative to a pinned descriptor with ``O_NOFOLLOW``; links, special fi
 anything beyond the walk and byte caps are ignored. A feed failure never affects the job: the
 feed disables itself instead of raising.
 """
+import base64
 import json
 import math
 import os
@@ -38,6 +39,7 @@ SHORT_LIMIT = 120
 ARGV_ITEMS = 32
 ARGV_ITEM_LIMIT = 300
 MIN_SECRET_CHARS = 4
+MIN_SECRET_BYTES = 8
 LONG_FIELDS = frozenset({"text", "input", "output", "stdout", "stderr", "error", "note"})
 LIST_CAPS = {"entries": 40}  # lists of small records, e.g. job.files chunks
 UNSAFE_CHARS = re.compile(
@@ -61,14 +63,30 @@ def _warn(message: str) -> None:
     print(f"re-dispatcher: live feed: {message}", file=sys.stderr, flush=True)
 
 
-def secret_strings(secrets) -> tuple[str, ...]:
-    """Secret values as text, longest first, ignoring values too short to be keys."""
-    values = set()
+def secret_variants(secrets) -> tuple[bytes, ...]:
+    """Forms redacted in both live events and reports, longest match first."""
+    variants = set()
     for secret in secrets:
-        text = secret.decode("utf-8", "ignore") if isinstance(secret, bytes) else str(secret)
-        if len(text) >= MIN_SECRET_CHARS:
-            values.add(text)
-    return tuple(sorted(values, key=len, reverse=True))
+        raw = secret.encode("utf-8") if isinstance(secret, str) else secret
+        if len(raw) < MIN_SECRET_BYTES:
+            continue
+        hex_value = raw.hex().encode("ascii")
+        variants.update((raw, hex_value, hex_value.upper()))
+        for encode in (base64.b64encode, base64.urlsafe_b64encode):
+            for offset in range(3):
+                encoded = encode(bytes(offset) + raw)
+                # Only the base64 digits determined entirely by the secret's own bits.
+                variants.add(encoded[(8 * offset + 5) // 6 : 8 * (offset + len(raw)) // 6])
+    return tuple(sorted(variants, key=len, reverse=True))
+
+
+def secret_strings(secrets) -> tuple[str, ...]:
+    raw = tuple(s.encode("utf-8") if isinstance(s, str) else s for s in secrets)
+    # Direct feed users also mask short literal values of at least four characters.
+    values = {s for s in raw if len(s.decode("utf-8", "ignore")) >= MIN_SECRET_CHARS}
+    values.update(secret_variants(raw))
+    return tuple(text for value in sorted(values, key=len, reverse=True)
+                 if (text := value.decode("utf-8", "ignore")))
 
 
 def clean_text(value, limit: int, secrets: tuple[str, ...] = ()) -> str:

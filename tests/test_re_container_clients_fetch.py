@@ -184,9 +184,40 @@ class WaitTests(FetchTestBase):
         clock, (code, _, err) = self.run_waiting(host, "--timeout", "40", "--interval", "15")
         self.assertEqual(code, 3)
         self.assertEqual(clock.sleeps, [15, 15, 10])
-        self.assertEqual(len(host.ssh_calls()), 4)
-        self.assertIn("not ready", err)
+        self.assertEqual([kwargs.get("timeout") for argv, kwargs in host.calls if argv[0] == "ssh"],
+                         [40, 25, 10])
+        self.assertIn("wait deadline expired", err)
         self.assertEqual(host.scp_calls(), [])
+
+    def test_ready_probe_observed_late_reports_expiry_not_a_missing_report(self):
+        host, clock = FakeHost(self.reports), FakeTime()
+
+        def delayed_reply(argv, **kwargs):
+            clock.now += 2
+            return host(argv, **kwargs)
+
+        with mock.patch.object(self.fetch, "time", clock):
+            code, _, err = self.fetch_main(delayed_reply, "--wait", "--timeout", "1")
+        self.assertEqual(code, 3)
+        self.assertIn("wait deadline expired", err)
+        self.assertNotIn("not ready", err)
+        self.assertEqual(host.scp_calls(), [])
+
+    def test_stalled_ssh_is_bounded_and_not_reported_as_a_missing_result(self):
+        def stalled(argv, **kwargs):
+            self.assertEqual(argv[0], "ssh")
+            self.assertEqual(kwargs.get("timeout"), 4)
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+        with self.assertRaisesRegex(SystemExit, "readiness check timed out"):
+            self.run_waiting(stalled, "--timeout", "4")
+        self.assertEqual(self.dest_entries(), [])
+
+    def test_zero_wait_budget_starts_no_remote_process(self):
+        host = FakeHost(self.reports)
+        _, (code, _, _) = self.run_waiting(host, "--timeout", "0")
+        self.assertEqual(code, 3)
+        self.assertEqual(host.calls, [])
 
     def test_default_wait_budget_is_7800_seconds_in_15_second_steps(self):
         host = FakeHost(self.reports, ready_codes=(1,))

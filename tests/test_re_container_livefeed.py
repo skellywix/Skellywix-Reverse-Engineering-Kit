@@ -1,4 +1,5 @@
 """Live feed contract: bounded, sanitized, root-written events and an fd-relative session tailer."""
+import base64
 import importlib.util
 import json
 import os
@@ -76,6 +77,31 @@ class LiveFeedTests(FeedTestBase):
         self.assertEqual(request["name"], "r.json")
         self.assertEqual(len(request["argv"]), self.live.ARGV_ITEMS + 1)
         self.assertTrue(all(len(item) <= self.live.ARGV_ITEM_LIMIT for item in request["argv"]))
+
+    def test_encoded_credentials_are_redacted_in_event_payloads(self):
+        token = b"fixture-???>~~~???-value"
+        feed = self.feed((token,))
+        values = [token.hex(), token.hex().upper()]
+        for encode in (base64.b64encode, base64.urlsafe_b64encode):
+            values.extend(encode(b"x" * n + token + b"y").decode("ascii") for n in range(3))
+        feed.emit("job.files", entries=[{"path": value} for value in values])
+        fields = events(feed.path)[0]["entries"]
+        self.assertEqual(len(fields), len(values))
+        for original, field in zip(values, fields):
+            self.assertNotIn(original, field["path"])
+            self.assertIn("[REDACTED]", field["path"])
+
+    def test_eight_byte_credential_is_masked_in_all_base64_alignments(self):
+        value = "\U0001d11e" * 2  # Eight UTF-8 bytes, only two characters.
+        token = value.encode("utf-8")
+        feed = self.feed((token,))
+        samples = [value]
+        for encode in (base64.b64encode, base64.urlsafe_b64encode):
+            samples.extend(encode(b"x" * n + token + b"y").decode("ascii") for n in range(3))
+        feed.emit("tool.call", argv=samples)
+        masked = events(feed.path)[0]["argv"]
+        self.assertEqual(len(masked), len(samples))
+        self.assertTrue(all("[REDACTED]" in item for item in masked))
 
     def test_short_secret_values_do_not_mangle_text(self):
         feed = self.feed(secrets=(b"1", b"abc"))

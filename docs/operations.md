@@ -32,6 +32,8 @@ The status table is in the README. Operationally:
 
 - A cancel marker is any entry named `jobs/cancel/<job-id>`. The dispatcher only checks for the
   active job's name, so a flood of markers costs nothing. It removes the marker after use.
+  On a stop, the dispatcher stops and reaps the Docker client before it checks that the agent
+  container is gone. If it can't confirm containment, it doesn't start the next job.
 - `systemctl stop` sends SIGTERM to the dispatcher alone (`KillMode=mixed`). The active job's
   agent and sandbox runs are contained, the job is published as `failed` with
   `error: dispatcher stopped`, and the service exits. `ExecStopPost=--cleanup-only` then removes
@@ -66,11 +68,16 @@ Free space with `--prune DAYS` (finished jobs only) and `fstrim /srv/re-lab`.
 
 ## Redaction
 
-Every published file (report, each evidence file, the merged session log) and every string
-field of `result.json` is redacted for every value of at least 8 bytes in `models.env` and the
-console's key file, including their hex and base64 encodings at all three alignments. Text keeps
-a visible `[REDACTED]` marker; files containing NUL bytes get a same-length mask so offsets stay
-valid. File names are redacted too. Shorter values (`1`, `true`) are never treated as secrets.
+Each job takes one snapshot of the root and console model keys before it emits live events or
+launches the agent. Rotating a key affects the next job. The current job uses its snapshot for
+both injection and redaction, including on publication failure. A missing or unreadable root
+key file stops the job before launch rather than producing an unfiltered feed.
+
+The live event payloads, report, evidence, merged session log, and string fields in `result.json`
+mask credential values of at least 8 bytes from that snapshot. A console override doesn't remove
+the shadowed value from redaction. Matches include hex and base64 forms at all three alignments.
+Text uses `[REDACTED]`; files containing NUL bytes use a same-length mask to preserve offsets.
+File names are redacted too. Shorter values (`1`, `true`) aren't treated as credentials.
 Split, transformed, or encrypted disclosure remains an accepted risk.
 
 ## Execution policy and approvals

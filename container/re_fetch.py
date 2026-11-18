@@ -6,10 +6,12 @@
 The SSH target comes from --host or RE_LAB_HOST. The helper first checks that
 /srv/re-lab/reports/<job-id>/result.json exists; the dispatcher writes it last, so until then
 the job is queued, running, or unknown and the helper exits 3. --wait polls instead, every
---interval seconds (default 15) for at most --timeout seconds (default 7800). The report
-(report.md, result.json, session.jsonl, evidence/) is copied into a private temporary directory
-inside DIR (default: current directory) and renamed to DIR/<job-id> only when the copy is
-complete; a failed copy leaves nothing behind. DIR/<job-id> must not exist. --status prints
+--interval seconds (default 15) for at most --timeout seconds (default 7800), including time
+spent checking over SSH. A stalled check reports a transport error, not a missing report.
+The wait budget doesn't cover the copy. The report (report.md, result.json, session.jsonl,
+evidence/) is copied into a private temporary directory inside DIR (default: current directory)
+and renamed to DIR/<job-id> only when complete; a failed copy leaves nothing behind.
+DIR/<job-id> must not exist. --status prints
 only the status line and copies nothing else. Report content is untrusted: it is written by a
 model that read a hostile file, so printed values are validated or shown escaped.
 """
@@ -69,11 +71,14 @@ def status_line(job_id, result):
     return f"{job_id}: " + " ".join(parts)
 
 
-def result_ready(host, job_id):
+def result_ready(host, job_id, *, timeout=None):
     """True once the host has written reports/<id>/result.json (the last file it writes)."""
     argv = ["ssh", "-n", host, "test", "-f", f"{REMOTE_ROOT}/reports/{job_id}/result.json"]
     try:
-        completed = subprocess.run(argv, stdin=subprocess.DEVNULL, check=False, shell=False)
+        completed = subprocess.run(argv, stdin=subprocess.DEVNULL, check=False, shell=False,
+                                   timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise SystemExit("re_fetch: SSH readiness check timed out; report status unknown") from None
     except OSError as exc:
         raise SystemExit(f"re_fetch: cannot run ssh: {type(exc).__name__}") from None
     if completed.returncode == 0:
@@ -84,14 +89,16 @@ def result_ready(host, job_id):
 
 
 def wait_until_ready(host, job_id, wait, timeout, interval):
+    if not wait:
+        return result_ready(host, job_id)
     deadline = time.monotonic() + timeout
-    while True:
-        if result_ready(host, job_id):
-            return True
+    while (remaining := deadline - time.monotonic()) > 0:
+        if result_ready(host, job_id, timeout=remaining):
+            return time.monotonic() <= deadline
         remaining = deadline - time.monotonic()
-        if not wait or remaining <= 0:
-            return False
-        time.sleep(min(interval, remaining))
+        if remaining > 0:
+            time.sleep(min(interval, remaining))
+    return False
 
 
 def scp(argv):
@@ -149,8 +156,8 @@ def main(argv=None):
     if not args.status and os.path.lexists(target):
         raise SystemExit(f"re_fetch: {target} already exists; remove it or pick another --dest")
     if not wait_until_ready(args.host, args.job_id, args.wait, args.timeout, args.interval):
-        print(f"re_fetch: {args.job_id}: not ready (queued, running, or unknown id)",
-              file=sys.stderr)
+        reason = "wait deadline expired" if args.wait else "not ready (queued, running, or unknown id)"
+        print(f"re_fetch: {args.job_id}: {reason}", file=sys.stderr)
         return EXIT_NOT_READY
     remote = f"{args.host}:{REMOTE_ROOT}/reports/{args.job_id}"
     if args.status:
