@@ -36,7 +36,7 @@ FAKE_OMP = textwrap.dedent("""
     with open(os.path.join(here, "omp-argv.json"), "w") as record:
         json.dump({"argv": args, "cwd": os.getcwd(),
                    "require_ready": os.environ.get("OMP_MCP_REQUIRE_READY"),
-                   "has_mcp_timeout": "OMP_MCP_TIMEOUT_MS" in os.environ,
+                   "mcp_timeout": os.environ.get("OMP_MCP_TIMEOUT_MS"),
                    "sentinel": os.environ.get("RE_RUNNER_TEST_SENTINEL")}, record)
     session_dir = args[args.index("--session-dir") + 1]
     os.makedirs(session_dir, exist_ok=True)
@@ -251,7 +251,7 @@ class LaunchTests(RunnerTestBase):
                 (self.job / "in" / "job.json").write_text(raw, encoding="utf-8")
                 self.assert_failed_without_launch(self.run_job(), "invalid-job")
 
-    def test_omp_requires_mcp_readiness_and_keeps_the_mcp_timeout_unset(self):
+    def test_omp_requires_mcp_readiness_with_the_rea_startup_window(self):
         environ = {key: value for key, value in os.environ.items()
                    if key not in ("OMP_MCP_TIMEOUT_MS", "OMP_MCP_REQUIRE_READY")}
         environ["RE_RUNNER_TEST_SENTINEL"] = "kept"
@@ -259,7 +259,11 @@ class LaunchTests(RunnerTestBase):
             self.run_job()
         call = self.omp_call()
         self.assertEqual(call["require_ready"], "1")
-        self.assertFalse(call["has_mcp_timeout"])
+        # Print mode's readiness wait uses OMP_MCP_TIMEOUT_MS, not the per-server timeout, so it
+        # must equal REA's request budget in mcp.json (never shorter, never a different deadline).
+        mcp = json.loads((CONTAINER / "omp-profile" / "mcp.json").read_text(encoding="utf-8"))
+        self.assertEqual(call["mcp_timeout"], str(mcp["mcpServers"]["rea"]["timeout"]))
+        self.assertEqual(int(call["mcp_timeout"]), self.runner.MCP_TIMEOUT_MS)
         self.assertEqual(call["sentinel"], "kept", "the rest of the environment is inherited")
 
 

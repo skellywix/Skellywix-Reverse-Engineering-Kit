@@ -208,10 +208,18 @@ def build_omp_argv(omp_cmd, model: str, max_cost: float, session_dir: Path,
     ]
 
 
+# REA's per-server request timeout in omp-profile/mcp.json. Print mode waits for MCP readiness
+# for OMP_MCP_TIMEOUT_MS (default 30 s) whatever the per-server value is, so the same value is
+# set here: REA gets the same startup window as its request budget, and with REA as the only
+# server the request deadline does not change.
+MCP_TIMEOUT_MS = 900000
+
+
 def omp_environment(base=None) -> dict:
     """OMP's environment: a job without its MCP servers (REA) fails instead of reporting done."""
     env = dict(os.environ if base is None else base)
     env["OMP_MCP_REQUIRE_READY"] = "1"
+    env["OMP_MCP_TIMEOUT_MS"] = str(MCP_TIMEOUT_MS)
     return env
 
 
