@@ -1,20 +1,38 @@
 # re-egress: the only route out of re-agent. Squid forward proxy, CONNECT only, to the model endpoints.
 # Anything else, including the LAN, the Docker host, and every non-listed domain, is refused.
 http_port 3128
+visible_hostname re-egress
+httpd_suppress_version_string on
 
+# Only agents on the isolated internal network may use the proxy; the outbound bridge and the
+# Docker host are not clients. Must match the re-internal subnet in compose.yaml.
+acl agent_net src 172.30.97.0/24
 acl model_endpoints dstdomain -n api.openai.com api.anthropic.com openrouter.ai chatgpt.com auth.openai.com
 acl tls_port port 443
 acl connect_method method CONNECT
 # Refuse numeric CONNECT hosts before the domain allowlist. -n above also disables PTR matching.
 acl literal_ip dstdom_regex -i ^[0-9]{1,3}(\.[0-9]{1,3}){3}$
 acl literal_ip dstdom_regex -i ^\[?[0-9a-f]*:[0-9a-f:.]*\]?$
-# A listed name that resolves to a private or local address must still be refused.
-acl private_dst dst 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16
-acl private_dst dst ::1 fc00::/7 fe80::/10
+# A listed name that resolves to a private, local or otherwise special-purpose address must
+# still be refused (IANA special-purpose registries, plus multicast, NAT64 and 6to4 prefixes
+# that can embed private IPv4 addresses). Squid matches IPv4 entries against IPv4-mapped IPv6
+# destinations itself; never list ::ffff:0:0/96 here, because that would match every IPv4
+# destination.
+acl private_dst dst 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12
+acl private_dst dst 192.0.0.0/24 192.0.2.0/24 192.88.99.0/24 192.168.0.0/16 198.18.0.0/15
+acl private_dst dst 198.51.100.0/24 203.0.113.0/24 224.0.0.0/4 240.0.0.0/4
+acl private_dst dst ::/128 ::1 64:ff9b::/96 64:ff9b:1::/48 100::/64 2001::/23 2001:db8::/32
+acl private_dst dst 2002::/16 3fff::/20 5f00::/16 fc00::/7 fe80::/10 fec0::/10 ff00::/8
 
+# Order matters. Every rule before "deny private_dst" is decided from the request line alone,
+# so an unlisted name is refused before Squid would resolve it: hostile clients cannot use the
+# proxy's resolver as a DNS channel. Only allowlisted names are ever resolved.
+http_access deny !agent_net
+http_access deny !connect_method
 http_access deny !tls_port
+http_access deny literal_ip
+http_access deny !model_endpoints
 http_access deny private_dst
-http_access deny connect_method literal_ip
 http_access allow connect_method tls_port model_endpoints
 http_access deny all
 
@@ -24,7 +42,9 @@ via off
 forwarded_for delete
 
 # TLS stays end to end (CONNECT): the proxy sees host names, never request bodies or keys.
-access_log stdio:/dev/stdout
+# Log lines are bounded so a hostile client cannot inflate them.
+logformat bounded %ts.%03tu %6tr %>a %Ss/%03>Hs %<st %rm %.256ru %Sh/%<a
+access_log stdio:/dev/stdout bounded
 cache_log /dev/stderr
 pid_filename /tmp/squid.pid
 coredump_dir /tmp

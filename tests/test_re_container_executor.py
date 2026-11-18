@@ -176,8 +176,11 @@ class RequestValidationTests(ExecutorTestBase):
             *cfg.docker_prefix, "run", "--rm", "--runtime=runsc", "--network=none", "--read-only",
             "--cap-drop=ALL", "--security-opt=no-new-privileges", "--user=10001:10001",
             "--label", "re-lab.role=exec", "--label", f"re-lab.job={JOB}",
+            "--name", f"re-lab-exec-{RUN_ID}", "--pull=never",
             "--log-driver=none", "--cidfile", str(run / "cid"), "--pids-limit=256",
-            "--memory=256m", "--cpus=1", "--tmpfs", "/tmp:size=256m,noexec,nosuid,nodev",
+            "--memory=256m", "--memory-swap=256m", "--cpus=1",
+            "--ulimit", "fsize=1073741824", "--ulimit", "nofile=4096:4096",
+            "--tmpfs", "/tmp:size=256m,noexec,nosuid,nodev",
             "-v", f"{run / 'in'}:/job/in:ro", "-v", f"{run / 'out'}:/job/out:rw",
             IMAGE, "objdump", "-d", "/job/in/a.out"]
         self.assertEqual(self.executor.build_argv(cfg, request, RUN_ID), expected)
@@ -918,11 +921,26 @@ class FinalReviewContainmentTests(ExecutorTestBase):
         self.assertIsInstance(errors[0], self.executor.ContainmentError)
 
     @needs_fd_ops
-    def test_sweep_runs_raises_when_stale_scratch_cannot_be_removed(self):
+    def test_sweep_runs_quarantines_scratch_it_cannot_remove(self):
         stale = self.runs / RUN_ID
         stale.mkdir()
         with mock.patch.object(
                 self.executor, "_rmtree_force", side_effect=PermissionError("blocked")):
+            self.executor.sweep_runs(self.cfg)
+        self.assertFalse(stale.exists())
+        quarantined = [path.name for path in self.runs.iterdir()]
+        self.assertEqual(len(quarantined), 1)
+        self.assertTrue(quarantined[0].startswith(".quarantine-"))
+        with mock.patch.object(
+                self.executor, "_rmtree_force", side_effect=PermissionError("blocked")):
+            self.executor.sweep_runs(self.cfg)  # an old quarantine entry is reported, not fatal
+
+    @needs_fd_ops
+    def test_sweep_runs_raises_when_scratch_can_be_neither_removed_nor_quarantined(self):
+        (self.runs / RUN_ID).mkdir()
+        with mock.patch.object(
+                self.executor, "_rmtree_force", side_effect=PermissionError("blocked")), \
+             mock.patch.object(self.executor.os, "rename", side_effect=PermissionError("blocked")):
             with self.assertRaises(self.executor.ContainmentError):
                 self.executor.sweep_runs(self.cfg)
 

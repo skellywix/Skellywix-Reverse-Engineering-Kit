@@ -201,14 +201,18 @@ class AgentArgvTests(DispatcherTestBase):
         self.assertEqual(argv[image + 1:], ["python3", "/opt/re-lab/runner.py", "--job", JOB])
         for flag in ("--rm", "--runtime=runsc", "--read-only", "--cap-drop=ALL",
                      "--security-opt=no-new-privileges", "--user=10001:10001",
-                     "--memory=3g", "--pids-limit=512"):
+                     "--memory=3g", "--memory-swap=3g", "--pids-limit=512", "--pull=never"):
             self.assertIn(flag, argv[:image])
+        self.assertEqual(argv[argv.index("--name") + 1], f"re-lab-agent-{JOB}")
+        self.assertTrue(any(flag.startswith("--cpus=") for flag in argv[:image]))
         self.assertEqual(argv[argv.index("--label") + 1], "re-lab.role=agent")
         labels = [argv[index + 1] for index, value in enumerate(argv) if value == "--label"]
         self.assertEqual(labels, ["re-lab.role=agent", f"re-lab.job={JOB}"])
         self.assertIn("--log-driver=none", argv[:image])
         self.assertEqual(argv[argv.index("--network") + 1], "re-lab_re-internal")
-        self.assertEqual(argv[argv.index("--env-file") + 1], str(self.models))
+        # The agent gets a per-job, root-only env file built from validated models.env lines,
+        # never the operator's file itself.
+        self.assertEqual(argv[argv.index("--env-file") + 1], str(work / "agent.env"))
 
     def test_compose_keeps_only_proxy_running_and_images_build_only(self):
         text = (CONTAINER / "compose.yaml").read_text(encoding="utf-8")
@@ -237,8 +241,12 @@ class ActiveExecutionTests(DispatcherTestBase):
         process.wait.return_value = 0
         with mock.patch.object(self.dispatcher.subprocess, "Popen", return_value=process), \
              mock.patch.object(self.dispatcher.executor, "process_pending", return_value=0) as pending, \
+             mock.patch.object(self.dispatcher.executor, "contain_container") as contain, \
              mock.patch.object(self.dispatcher.time, "sleep"):
             self.dispatcher.run_agent(self.cfg, JOB, wall_timeout_s=30)
+        # A clean client exit is still followed by proof that the exact container is gone.
+        contain.assert_called_once_with(("docker",), self.root / "jobs" / "work" / JOB / "agent.cid")
+        self.assertFalse((self.root / "jobs" / "work" / JOB / "agent.env").exists())
         self.assertGreaterEqual(pending.call_count, 1)
         for call in pending.call_args_list:
             self.assertEqual(call.args[0].requests_dir,
@@ -464,7 +472,7 @@ class PortedClaimAndVerificationTests(DispatcherTestBase):
         first = self.dispatcher.claim_job(self.cfg, JOB)
         with self.assertRaises(self.dispatcher.JobError):
             self.dispatcher.claim_job(self.cfg, JOB)
-        self.assertTrue((first / "job.json").is_file())
+        self.assertTrue((first / "upload" / "job.json").is_file())
 
     def test_unsafe_job_ids_are_rejected(self):
         for job_id in ("../escape", "a/b", "UPPER-CASE-1", "short"):
@@ -546,16 +554,19 @@ class PortedAgentLaunchTests(DispatcherTestBase):
     def test_agent_home_and_tmp_are_per_job_tmpfs_mounts(self):
         argv = self.dispatcher.build_agent_argv(self.cfg, JOB)
         tmpfs = [argv[index + 1] for index, value in enumerate(argv) if value == "--tmpfs"]
-        self.assertEqual(tmpfs, ["/home/re:size=512m", "/tmp:size=512m"])
+        self.assertEqual(tmpfs, ["/home/re:size=512m,noexec,nosuid,nodev",
+                                 "/tmp:size=512m,noexec,nosuid,nodev"])
 
 
 class PortedHostOutcomeTests(DispatcherTestBase):
     def test_exit_zero_three_other_and_timeout_map_to_final_statuses(self):
         cases = (
             ("job-outcome-0001", "done", 0, False, "done"),
-            ("job-outcome-0002", "cost-cap", 3, False, "cost-cap"),
+            ("job-outcome-0002", "cost-cap", 0, False, "cost-cap"),
             ("job-outcome-0003", "done", 7, False, "failed"),
             ("job-outcome-0004", "done", 137, True, "time-cap"),
+            ("job-outcome-0005", "cost-cap", 1, False, "failed"),
+            ("job-outcome-0006", "time-cap", 0, False, "time-cap"),
         )
         for job_id, runner_status, exit_code, timed_out, expected in cases:
             with self.subTest(expected=expected):
@@ -713,6 +724,7 @@ class IncrementalPublishWalkTests(DispatcherTestBase):
 
         destination = self.root / "evidence-destination"
         destination.mkdir()
+        (self.root / "evidence-source").mkdir()
         with mock.patch.object(os, "scandir", return_value=Entries()), \
              mock.patch.object(os, "listdir",
                                side_effect=AssertionError("directory was materialized")):

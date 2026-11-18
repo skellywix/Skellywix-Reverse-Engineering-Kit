@@ -1,0 +1,6 @@
+# CI lint tools, hash-locked (py3-none manylinux x86_64 wheels).
+# Install: python -m pip install --require-hashes --no-deps --only-binary=:all: -r requirements-ci.txt
+ruff==0.17.5 \
+    --hash=sha256:40ca8afaac309b41a5b2e09e4e7beb1f824826b93c25697c4d74f573324fba4e
+zizmor==1.32.0 \
+    --hash=sha256:84a6acb975accc13408786a2bd274b572537ca19c933ebbc13e78f3988562071

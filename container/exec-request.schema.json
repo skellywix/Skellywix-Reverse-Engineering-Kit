@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "re-lab/exec-request.schema.json",
   "title": "re-dispatcher execution request",
-  "description": "Written by the active re-agent to /job/exec/requests/<name>.json (write a dot-prefixed temp name, then rename). The dispatcher imports executor.py, answers in /job/exec/results/<name>.json, and serves only this active job. Nothing outside these four properties is accepted: no env, mounts, devices, network, user, image, or privilege options.",
+  "description": "Written by the active re-agent to /job/exec/requests/<name>.json, where <name>.json matches ^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\\.json$ (write a dot-prefixed temp name, then rename; other names are ignored). The dispatcher imports executor.py, answers in /job/exec/results/<name>.json, and serves only this active job. The operator's execution policy may block a request or hold it for approval first. Nothing outside these four properties is accepted: no env, mounts, devices, network, user, image, or privilege options.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -24,7 +24,7 @@
         "maxLength": 8192,
         "pattern": "^[^\\u0000]*$"
       },
-      "description": "Command vector run inside the image after the fixed flags. No shell. /job/in is a read-only, root-owned private copy of the job's target/; /job/out is a private writable scratch directory. After the run, regular files from /job/out are copied to work/<job_id>/out/<run_id>/ (at most 64 MiB; links and special files are skipped)."
+      "description": "Command vector run inside the image after the fixed flags. No shell. At most 256 items, each at most 8192 characters of valid UTF-8 without NUL, and at most 262144 bytes in total. /job/in is a read-only, root-owned private copy of the job's verified target/; /job/out is a private writable scratch directory (files there are capped at 1 GiB each). After the run, regular files from /job/out are copied to work/<job_id>/out/<run_id>/ (at most 64 MiB and 10000 entries; links and special files are skipped)."
     },
     "timeout_s": {
       "type": "integer",
@@ -55,7 +55,8 @@
             "cancelled",
             "rejected",
             "error"
-          ]
+          ],
+          "description": "ok and failed report the command's exit; timeout and cancelled mean the container was contained; rejected means the request never ran; error means Docker could not start."
         },
         "job_id": {
           "type": "string"
@@ -109,7 +110,7 @@
         },
         "error": {
           "type": "string",
-          "description": "Present for rejected and error; a fixed message, never request content."
+          "description": "Present for rejected and error; a fixed message, never request content. Policy outcomes are 'blocked by execution policy', 'denied by operator', 'approval timed out' and 'execution policy is invalid'."
         }
       }
     }

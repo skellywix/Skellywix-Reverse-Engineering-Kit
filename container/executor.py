@@ -4,7 +4,7 @@
 The dispatcher gives this module only the active job's request and result
 directories. Each closed-schema request can choose a command vector inside the
 fixed execution image, a timeout, and a memory limit. This module copies the
-root-owned submitted target into a private run directory, starts one fixed-flag
+root-owned verified target into a private run directory, starts one fixed-flag
 networkless container without a shell, copies bounded output back through pinned
 descriptors, writes a bounded result, and consumes the request.
 
@@ -13,7 +13,16 @@ The executor never bind-mounts an agent-writable source. A private
 The input walk is fd-relative and uses ``O_NOFOLLOW``; links and special files
 are refused. The run input preserves source execute bits and is mounted at
 ``/job/in`` without ``noexec``. The container's ``/tmp`` is a noexec tmpfs.
+
+Every container carries a deterministic name, so containment can find a container
+whose cidfile was never written (a timeout or cancellation inside the Docker
+client's create window). After every client exit, normal or not, the container is
+killed, removed, and proven absent before its run directory is discarded.
+
+An optional ``policy`` (operator execution rules and approvals) and ``observer``
+(the live event feed) are supplied by the dispatcher through ``Config``.
 """
+import heapq
 import json
 import os
 import re
@@ -32,20 +41,31 @@ JOB_ID_RE = re.compile(r"^[a-z0-9-]{8,64}$")
 RUN_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 IMAGE_RE = re.compile(r"^(sha256:[0-9a-f]{64}|[a-z0-9][a-z0-9._/-]{0,200}@sha256:[0-9a-f]{64})$")
 REQUEST_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.json$")
+CONTAINER_NAME_RE = re.compile(r"^re-lab-(agent|exec)-[a-z0-9-]{8,64}$")
 ALLOWED_KEYS = frozenset({"job_id", "argv", "timeout_s", "memory_mb"})
 TIMEOUT_MIN, TIMEOUT_MAX, TIMEOUT_DEFAULT = 1, 600, 60
 MEMORY_MIN, MEMORY_MAX, MEMORY_DEFAULT = 64, 1024, 512
 MAX_ARGV_ITEMS = 256
-MAX_ARG_BYTES = 8192
+MAX_ARG_CHARS = 8192
+MAX_ARG_BYTES = 4 * MAX_ARG_CHARS  # a UTF-8 character is at most four bytes
+MAX_ARGV_BYTES = 256 * 1024
 MAX_REQUEST_BYTES = 64 * 1024
+MAX_REQUEST_SCAN = 10000
+REQUEST_BATCH = 64
 OUTPUT_CAP_BYTES = 64 * 1024
+MAX_FILE_BYTES = 1024 ** 3  # RLIMIT_FSIZE inside the exec container (runsc enforces it)
+MAX_OPEN_FILES = 4096  # RLIMIT_NOFILE inside the exec container
 KILL_GRACE_S = 10
 POLL_INTERVAL_S = 0.1
+REMOVAL_WAIT_S = 10
+REMOVAL_POLL_S = 0.25
+REMOVE_TIMEOUT_S = 600
 MAX_INPUT_BYTES = 2 * 1024 ** 3
 MAX_OUTPUT_BYTES = 64 * 1024 ** 2
 MAX_ENTRIES = 10000
 MAX_DEPTH = 32
 COPY_CHUNK = 1024 * 1024
+QUARANTINE_PREFIX = ".quarantine-"
 
 
 class RequestError(Exception):
@@ -59,6 +79,10 @@ def _safe(text: object, limit: int = 40) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "?", str(text))[:limit]
 
 
+def _warn(message: str) -> None:
+    print(f"re-executor: {message}", file=sys.stderr, flush=True)
+
+
 @dataclass(frozen=True)
 class Config:
     image: str
@@ -70,6 +94,9 @@ class Config:
     agent_uid: int = 10001
     agent_gid: int = 10001
     docker_prefix: tuple = field(default=("docker",))
+    # Optional dispatcher hooks: an execution-policy gate and a live-event observer.
+    policy: object = field(default=None, compare=False, repr=False)
+    observer: object = field(default=None, compare=False, repr=False)
 
     def __post_init__(self):
         if not isinstance(self.image, str) or not IMAGE_RE.match(self.image):
@@ -103,6 +130,13 @@ def _bounded_int(body: dict, key: str, low: int, high: int, default: int) -> int
     return value
 
 
+def _encoded(arg: str) -> bytes | None:
+    try:
+        return arg.encode("utf-8")
+    except UnicodeEncodeError:
+        return None
+
+
 def validate_request(body: object) -> ExecRequest:
     if not isinstance(body, dict):
         raise RequestError("request must be a JSON object")
@@ -110,13 +144,22 @@ def validate_request(body: object) -> ExecRequest:
     if unknown:
         raise RequestError("unknown request key: " + ", ".join(_safe(k) for k in unknown[:5]))
     job_id = body.get("job_id")
-    if not isinstance(job_id, str) or not JOB_ID_RE.match(job_id):
+    if not isinstance(job_id, str) or not JOB_ID_RE.fullmatch(job_id):
         raise RequestError("job_id must match ^[a-z0-9-]{8,64}$")
     argv = body.get("argv")
     if (not isinstance(argv, list) or not argv or len(argv) > MAX_ARGV_ITEMS
-            or not all(isinstance(a, str) and "\x00" not in a and len(a.encode("utf-8", "replace")) <= MAX_ARG_BYTES
-                       for a in argv)):
+            or not all(isinstance(a, str) for a in argv)):
+        raise RequestError(
+            f"argv must be a non-empty list of at most {MAX_ARGV_ITEMS} strings without NUL bytes")
+    if any("\x00" in a for a in argv):
         raise RequestError("argv must be a non-empty list of strings without NUL bytes")
+    if any(len(a) > MAX_ARG_CHARS for a in argv):
+        raise RequestError(f"each argv item must be at most {MAX_ARG_CHARS} characters")
+    encoded = [_encoded(a) for a in argv]
+    if any(item is None for item in encoded):
+        raise RequestError("argv items must be valid UTF-8 text")
+    if sum(len(item) + 1 for item in encoded) > MAX_ARGV_BYTES:
+        raise RequestError(f"argv must total at most {MAX_ARGV_BYTES} bytes")
     if not argv[0]:
         raise RequestError("argv[0] must not be empty")
     return ExecRequest(
@@ -260,6 +303,25 @@ def _retry_after_chmod(func, path, exc) -> None:
 
 
 def _rmtree_force(path: Path) -> None:
+    """Remove a quiescent private tree of any depth or width.
+
+    GNU rm walks with a bounded number of descriptors and never follows links, so a
+    hostile 20,000-level directory chain cannot exhaust recursion or descriptors the way
+    shutil.rmtree can. Platforms without it fall back to shutil.rmtree.
+    """
+    if not os.path.lexists(path):
+        return
+    rm = shutil.which("rm")
+    if rm is not None and sys.platform.startswith("linux"):
+        try:
+            done = subprocess.run(
+                [rm, "-rf", "--one-file-system", "--", str(path)],
+                stdin=subprocess.DEVNULL, capture_output=True, timeout=REMOVE_TIMEOUT_S, check=False)
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise OSError(f"tree removal failed: {type(exc).__name__}") from None
+        if done.returncode != 0 or os.path.lexists(path):
+            raise OSError("tree removal failed")
+        return
     shutil.rmtree(path, onexc=_retry_after_chmod)
 
 
@@ -282,8 +344,8 @@ class Run:
             _rmtree_force(self.path)
         except FileNotFoundError:
             pass  # prepare_run failed before it created the run dir; nothing to remove
-        except OSError as exc:
-            print(f"re-executor: run dir cleanup failed: {type(exc).__name__}", file=sys.stderr, flush=True)
+        except Exception as exc:  # the startup sweep retries or quarantines it
+            _warn(f"run dir cleanup failed: {type(exc).__name__}")
 
 
 def prepare_run(cfg: Config, request: ExecRequest) -> Run:
@@ -348,18 +410,50 @@ def collect_output(cfg: Config, run: Run) -> dict:
 
 
 def sweep_runs(cfg: Config) -> None:
-    """Remove run dirs a crashed executor left behind. Call only while no request is in flight."""
+    """Remove run dirs a crashed executor left behind. Call only while no request is in flight.
+
+    The dispatcher calls this only after it proved that no labeled container exists, so an
+    entry that still cannot be removed is a storage problem, not a containment problem: it is
+    renamed to a quarantine name, reported, and retried at the next start. Only an entry that
+    can be neither removed nor quarantined stops the dispatcher."""
     _check_runs_root(cfg)
-    for name in os.listdir(cfg.runs_dir):
+    with os.scandir(cfg.runs_dir) as entries:
+        names = [entry.name for entry in entries]
+    for name in names:
         path = cfg.runs_dir / name
         try:
             if stat.S_ISDIR(os.lstat(path).st_mode):
                 _rmtree_force(path)
             else:
                 os.unlink(path)
+            continue
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            failure = type(exc).__name__
+        if name.startswith(QUARANTINE_PREFIX):
+            _warn(f"quarantined run dir is still not removable: {failure}")
+            continue
+        try:
+            os.rename(path, cfg.runs_dir / f"{QUARANTINE_PREFIX}{time.time_ns()}-{_safe(name, 64)}")
         except OSError as exc:
             raise ContainmentError(
-                f"stale run cleanup failed: {type(exc).__name__}") from None
+                f"stale run cleanup failed: {failure}; quarantine failed: {type(exc).__name__}") from None
+        _warn(f"stale run dir could not be removed ({failure}); quarantined for operator review")
+
+
+def container_name(cidfile: Path) -> str | None:
+    """The deterministic container name implied by a cidfile path, if any."""
+    cidfile = Path(cidfile)
+    owner = cidfile.parent.name
+    if cidfile.name == "cid" and RUN_ID_RE.fullmatch(owner):
+        name = f"re-lab-exec-{owner}"
+    elif cidfile.name == "agent.cid" and JOB_ID_RE.fullmatch(owner):
+        name = f"re-lab-agent-{owner}"
+    else:
+        return None
+    return name if CONTAINER_NAME_RE.fullmatch(name) else None
+
 
 def build_argv(cfg: Config, request: ExecRequest, run_id: str) -> list:
     """The one fixed docker argv. Mount sources are derived from the runs root and a uuid hex only."""
@@ -370,9 +464,11 @@ def build_argv(cfg: Config, request: ExecRequest, run_id: str) -> list:
         *cfg.docker_prefix, "run", "--rm", "--runtime=runsc", "--network=none", "--read-only",
         "--cap-drop=ALL", "--security-opt=no-new-privileges", f"--user={cfg.agent_uid}:{cfg.agent_gid}",
         "--label", "re-lab.role=exec", "--label", f"re-lab.job={request.job_id}",
+        "--name", f"re-lab-exec-{run_id}", "--pull=never",
         "--log-driver=none", "--cidfile", str(run_dir / "cid"), "--pids-limit=256",
-        f"--memory={request.memory_mb}m", "--cpus=1", "--tmpfs",
-        "/tmp:size=256m,noexec,nosuid,nodev",
+        f"--memory={request.memory_mb}m", f"--memory-swap={request.memory_mb}m", "--cpus=1",
+        "--ulimit", f"fsize={MAX_FILE_BYTES}", "--ulimit", f"nofile={MAX_OPEN_FILES}:{MAX_OPEN_FILES}",
+        "--tmpfs", "/tmp:size=256m,noexec,nosuid,nodev",
         "-v", f"{run_dir / 'in'}:/job/in:ro", "-v", f"{run_dir / 'out'}:/job/out:rw",
         cfg.image, *request.argv]
 
@@ -414,27 +510,50 @@ def _container_id(cidfile: Path) -> str:
     return container_id
 
 
+def _docker(docker_prefix: tuple, *args: str):
+    return subprocess.run(
+        [*docker_prefix, *args], capture_output=True, timeout=KILL_GRACE_S, check=False,
+        stdin=subprocess.DEVNULL)
+
+
+def _absent(result) -> bool:
+    return (result.returncode == 1
+            and any(marker in (result.stderr or b"").lower()
+                    for marker in (b"no such object", b"no such container")))
+
+
+def _being_removed(result) -> bool:
+    """docker inspect output for a container that is exiting or under daemon-side --rm."""
+    status = (result.stdout or b"").strip().strip(b"'\"").lower()
+    return result.returncode == 0 and status in (b"removing", b"exited", b"dead", b"created")
+
+
 def contain_container(docker_prefix: tuple, cidfile: Path) -> None:
-    """Kill, remove and prove absent the exact container recorded in ``cidfile``."""
-    container_id = _container_id(cidfile)
+    """Kill, remove and prove absent the exact container recorded in ``cidfile``.
+
+    When the client was stopped before it wrote the cidfile, the deterministic container
+    name stands in for the id. A container the daemon is still removing (``--rm``) is
+    polled briefly instead of being reported as escaped."""
     try:
-        subprocess.run(
-            [*docker_prefix, "kill", container_id], capture_output=True,
-            timeout=KILL_GRACE_S, check=False)
-        subprocess.run(
-            [*docker_prefix, "rm", "-f", container_id], capture_output=True,
-            timeout=KILL_GRACE_S, check=False)
-        inspected = subprocess.run(
-            [*docker_prefix, "inspect", container_id], capture_output=True,
-            timeout=KILL_GRACE_S, check=False)
+        reference = _container_id(cidfile)
+    except ContainmentError:
+        reference = container_name(cidfile)
+        if reference is None:
+            raise
+    try:
+        _docker(docker_prefix, "kill", reference)
+        _docker(docker_prefix, "rm", "-f", reference)
+        inspected = _docker(docker_prefix, "inspect", "--format", "{{.State.Status}}", reference)
+        waited = 0.0
+        while not _absent(inspected) and _being_removed(inspected) and waited < REMOVAL_WAIT_S:
+            time.sleep(REMOVAL_POLL_S)
+            waited += REMOVAL_POLL_S
+            _docker(docker_prefix, "rm", "-f", reference)
+            inspected = _docker(docker_prefix, "inspect", "--format", "{{.State.Status}}", reference)
     except (OSError, subprocess.SubprocessError) as exc:
         raise ContainmentError(
             f"container containment command failed: {type(exc).__name__}") from None
-    not_found = (
-        inspected.returncode == 1
-        and any(marker in inspected.stderr.lower()
-                for marker in (b"no such object", b"no such container")))
-    if not not_found:
+    if not _absent(inspected):
         raise ContainmentError("container absence could not be confirmed")
 
 
@@ -442,13 +561,18 @@ def stop_docker_client(proc: subprocess.Popen) -> None:
     try:
         proc.kill()
     except OSError as exc:
-        print(f"re-executor: docker client kill failed: {type(exc).__name__}",
-              file=sys.stderr, flush=True)
+        _warn(f"docker client kill failed: {type(exc).__name__}")
     try:
         proc.wait(timeout=KILL_GRACE_S)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ContainmentError(
             f"docker client exit could not be confirmed: {type(exc).__name__}") from None
+
+
+def _cancelled_result(result: dict) -> dict:
+    return {**result, "status": "cancelled", "exit_code": None,
+            "stdout": "", "stdout_truncated": False,
+            "stderr": "", "stderr_truncated": False, "duration_s": 0.0}
 
 
 def _launch(
@@ -458,17 +582,17 @@ def _launch(
     started = time.monotonic()
     result = {"job_id": request.job_id, "run_id": run.run_id}
     if stop_event is not None and stop_event.is_set():
-        return {**result, "status": "cancelled", "exit_code": None,
-                "stdout": "", "stdout_truncated": False,
-                "stderr": "", "stderr_truncated": False, "duration_s": 0.0}
+        return _cancelled_result(result)
     readers = ()
     started_readers = []
     deadline = started + request.timeout_s
+    cidfile = run.path / "cid"
     try:
         proc = subprocess.Popen(argv, shell=False, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    except OSError:
+    except (OSError, ValueError):
         return {**result, "status": "error", "error": "docker could not be started"}
+    contained = False
     try:
         readers = (_Capture(proc.stdout), _Capture(proc.stderr))
         for reader in readers:
@@ -478,8 +602,11 @@ def _launch(
             cancelled = stop_event is not None and stop_event.is_set()
             remaining = deadline - time.monotonic()
             if cancelled or remaining <= 0:
-                contain_container(cfg.docker_prefix, run.path / "cid")
+                # Stop the client first: once it is gone it can no longer start a container it
+                # created, and containment then finds the container by id or by name.
                 stop_docker_client(proc)
+                contain_container(cfg.docker_prefix, cidfile)
+                contained = True
                 exit_code = None
                 status = "cancelled" if cancelled else "timeout"
                 break
@@ -489,24 +616,25 @@ def _launch(
                 break
             except subprocess.TimeoutExpired:
                 continue
+        if not contained:
+            # A client can exit without its container (daemon restart, attach error): prove it.
+            contain_container(cfg.docker_prefix, cidfile)
     except ContainmentError:
         try:
             stop_docker_client(proc)
         except ContainmentError as stop_error:
-            print(
-                f"re-executor: secondary client cleanup failed: {type(stop_error).__name__}",
-                file=sys.stderr, flush=True)
+            _warn(f"secondary client cleanup failed: {type(stop_error).__name__}")
         raise
     except Exception as exc:
         failure = None
         try:
-            contain_container(cfg.docker_prefix, run.path / "cid")
-        except ContainmentError as containment_error:
-            failure = containment_error
-        try:
             stop_docker_client(proc)
         except ContainmentError as client_error:
-            failure = failure or client_error
+            failure = client_error
+        try:
+            contain_container(cfg.docker_prefix, cidfile)
+        except ContainmentError as containment_error:
+            failure = failure or containment_error
         if failure is not None:
             raise failure
         raise ContainmentError(
@@ -519,7 +647,7 @@ def _launch(
             for stream in streams:
                 stream.close()
         else:
-            for reader, stream in zip(readers, streams):
+            for reader, stream in zip(readers, streams, strict=True):
                 if reader not in started_readers or not reader.is_alive():
                     stream.close()
     stdout, stderr = readers
@@ -569,26 +697,76 @@ class _RequestGone(Exception):
     """The request file disappeared between the directory listing and the read."""
 
 
-
 def _read_request(path: Path) -> object:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
     try:
         fd = os.open(path, flags)
     except FileNotFoundError:
         raise _RequestGone from None
     except OSError:
         raise RequestError("request is not a readable regular file") from None
-    with os.fdopen(fd, "rb") as handle:
-        info = os.fstat(handle.fileno())
-        if not stat.S_ISREG(info.st_mode):
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise RequestError("request is not a readable regular file")
-        raw = handle.read(MAX_REQUEST_BYTES + 1)
+        raw = bytearray()
+        while len(raw) <= MAX_REQUEST_BYTES:
+            chunk = os.read(fd, MAX_REQUEST_BYTES + 1 - len(raw))
+            if not chunk:
+                break
+            raw += chunk
+    except OSError:
+        raise RequestError("request is not a readable regular file") from None
+    finally:
+        os.close(fd)
     if len(raw) > MAX_REQUEST_BYTES:
         raise RequestError("request exceeds the size limit")
     try:
-        return json.loads(raw.decode("utf-8"))
+        return json.loads(bytes(raw).decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError):
         raise RequestError("request is not valid JSON") from None
+
+
+def _notify(cfg: Config, event: str, **fields) -> None:
+    if cfg.observer is None:
+        return
+    try:
+        cfg.observer(event, **fields)
+    except Exception as exc:  # the live feed must never affect execution
+        _warn(f"observer failed: {type(exc).__name__}")
+
+
+def _consume(path: Path) -> None:
+    """Remove a handled request; an agent-made directory or other oddity is renamed aside."""
+    try:
+        path.unlink(missing_ok=True)
+        return
+    except OSError:
+        pass
+    try:
+        os.rename(path, path.with_name(f".rejected-{uuid.uuid4().hex}"))
+    except OSError as exc:
+        _warn(f"request could not be consumed: {type(exc).__name__}")
+        _UNCONSUMED.add(str(path))
+
+
+_UNCONSUMED: set[str] = set()
+
+
+def _policy_decision(cfg: Config, request: ExecRequest, name: str,
+                     stop_event: threading.Event | None) -> tuple[str, str | None, str | None]:
+    """(action, rule, error) where action is allow | block | cancelled."""
+    if cfg.policy is None:
+        _notify(cfg, "exec.request", name=name, argv=list(request.argv),
+                timeout_s=request.timeout_s, memory_mb=request.memory_mb,
+                policy_action="allow", policy_rule=None)
+        return "allow", None, None
+    action, rule, error = cfg.policy.classify(request.argv)
+    _notify(cfg, "exec.request", name=name, argv=list(request.argv),
+            timeout_s=request.timeout_s, memory_mb=request.memory_mb,
+            policy_action=action, policy_rule=rule)
+    if action == "ask":
+        action, error = cfg.policy.await_approval(name, request.argv, rule, stop_event)
+    return action, rule, error
 
 
 def process_request_file(
@@ -606,30 +784,56 @@ def process_request_file(
         if link:
             raise RequestError("request is a symlink")
         request = validate_request(_read_request(path))
-        result = execute(cfg, request, stop_event)
+        if request.job_id != cfg.active_job_id:
+            raise RequestError("request job_id does not match the active job")
+        action, _rule, error = _policy_decision(cfg, request, result_name, stop_event)
+        if action == "block":
+            result = {"job_id": request.job_id, "status": "rejected",
+                      "error": error or "blocked by execution policy"}
+        elif action == "cancelled":
+            result = _cancelled_result({"job_id": request.job_id, "run_id": None})
+        else:
+            result = execute(cfg, request, stop_event)
     except _RequestGone:
         return None
     except RequestError as exc:
         result = {"status": "rejected", "error": str(exc)}
+    _notify(cfg, "exec.result", name=result_name, status=result.get("status"),
+            exit_code=result.get("exit_code"), duration_s=result.get("duration_s"),
+            output_files=result.get("output_files"), stdout=result.get("stdout", ""),
+            stderr=result.get("stderr", ""), error=result.get("error"))
     try:
         _write_result(cfg, result_name, result)
     except OSError as exc:
         # Consume the request anyway: an unanswerable request must not rerun on every poll.
-        print(f"re-executor: result write failed: {type(exc).__name__}", file=sys.stderr, flush=True)
-    path.unlink(missing_ok=True)
+        _warn(f"result write failed: {type(exc).__name__}")
+    _consume(path)
     return result
+
+
+def _pending_names(cfg: Config) -> list[str]:
+    """The lowest-sorting valid request names, examining a bounded number of entries."""
+    examined = 0
+    candidates = []
+    with os.scandir(cfg.requests_dir) as entries:
+        for entry in entries:
+            examined += 1
+            if examined > MAX_REQUEST_SCAN:
+                raise RequestError("request directory has too many entries")
+            name = entry.name
+            if REQUEST_NAME_RE.fullmatch(name) and str(cfg.requests_dir / name) not in _UNCONSUMED:
+                candidates.append(name)
+                if len(candidates) > 4 * REQUEST_BATCH:
+                    candidates = heapq.nsmallest(REQUEST_BATCH, candidates)
+    return heapq.nsmallest(REQUEST_BATCH, candidates)
 
 
 def process_pending(cfg: Config, stop_event: threading.Event | None = None) -> int:
     handled = 0
-    for name in sorted(os.listdir(cfg.requests_dir)):
+    for name in _pending_names(cfg):
         if stop_event is not None and stop_event.is_set():
             break
-        if not REQUEST_NAME_RE.fullmatch(name):
-            continue
         if process_request_file(
                 cfg, cfg.requests_dir / name, stop_event) is not None:
             handled += 1
     return handled
-
-

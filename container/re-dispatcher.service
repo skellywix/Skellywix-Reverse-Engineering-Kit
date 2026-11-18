@@ -1,28 +1,62 @@
 [Unit]
 Description=re-dispatcher: trusted host job control for the RE container stack
-Documentation=file:///opt/re-lab/README.md
+Documentation=https://github.com/skellywix/Skellywix-Reverse-Engineering-Kit/blob/main/README.md
 After=docker.service
 Requires=docker.service
 # Never run against the bare directory on the root disk: the 40 GiB bound and models.env live on the mount.
 RequiresMountsFor=/srv/re-lab
+# A deterministic start failure (for example a failed preflight) ends as a failed unit instead
+# of an endless restart loop.
+StartLimitIntervalSec=15min
+StartLimitBurst=5
 
 [Service]
 Type=simple
-# Root owns claims, immutable sources, Docker launch, execution requests, and publication.
-# Only the active job's agent-writable directories are mounted into its fresh container.
+# Refuse to start on a host that fails a security-critical check: Docker older than 28.0, no
+# runsc runtime, a non-isolated internal network, missing images, or unsafe directory or key
+# file modes. Run the same command by hand to see the report.
+ExecStartPre=/usr/bin/python3 /opt/re-lab/re-dispatcher.py --config /etc/re-lab/dispatcher.json --check
 ExecStart=/usr/bin/python3 /opt/re-lab/re-dispatcher.py --config /etc/re-lab/dispatcher.json
+# Runs after every stop, crash, or failed start: kill, remove, and prove absent every labeled
+# agent and exec container.
+ExecStopPost=/usr/bin/python3 /opt/re-lab/re-dispatcher.py --config /etc/re-lab/dispatcher.json --cleanup-only
 Restart=on-failure
 RestartSec=5
+# SIGTERM goes to the dispatcher alone: it contains the active job, publishes what it has, and
+# exits. Its docker clients are killed only after the stop timeout.
+KillMode=mixed
+TimeoutStopSec=180
+# Root owns claims, verified sources, Docker launch, execution requests, and publication. Only
+# the active job's agent-writable directories are mounted into its fresh container.
 User=root
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
+PrivateDevices=yes
+# The dispatcher talks only to the Docker socket, which is a file-system Unix socket.
+PrivateNetwork=yes
+IPAddressDeny=any
+RestrictAddressFamilies=AF_UNIX
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
 CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
 ReadWritePaths=/srv/re-lab
-ReadOnlyPaths=/etc/re-lab /opt/re-lab /var/run/docker.sock
-LockPersonality=yes
-RestrictRealtime=yes
+ReadOnlyPaths=/etc/re-lab /opt/re-lab
+# Note: a read-only mount does not stop connect() on the Docker socket. Through the Docker API
+# this service is root-equivalent by design; the directives above confine everything else.
 
 [Install]
 WantedBy=multi-user.target

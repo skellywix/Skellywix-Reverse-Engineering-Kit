@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # Keeps the SHA-pinned actions current; review the release notes before merging.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  # Digest-pinned base images in container/Dockerfile. A base-image bump changes the images
+  # that were qualified on a runsc host: requalify before deploying.
+  - package-ecosystem: docker
+    directory: /container
+    schedule:
+      interval: weekly
