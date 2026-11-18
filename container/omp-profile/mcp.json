@@ -7,6 +7,7 @@
         "/opt/rea/scripts/rea.mjs",
         "mcp"
       ],
+      "timeout": 900000,
       "env": {
         "REA_MCP_INPUT_SCHEMA_PROFILE": "compact",
         "REA_MCP_OUTPUT_SCHEMA_PROFILE": "off",
