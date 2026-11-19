@@ -1,0 +1,41 @@
+{
+  "poses": {
+    "tablet": "Skellywix taps a violet tablet. A white flower headband crowns her ice-blue bob, and pink hairpins frame her visible blue eye.",
+    "delighted": "Skellywix smiles and waves a white-gloved hand, with the other tucked against her cheek.",
+    "treat": "Skellywix lifts a crescent biscuit to her lips and holds the paper bag against her white apron.",
+    "nap": "Skellywix sits with her legs tucked to one side. Her blue eye is closed, and her cheek rests on her folded hands."
+  },
+  "pet": [
+    "Careful, I just got that ribbon straight.",
+    "/me hides a smile behind her sleeve.",
+    "One more and I’m putting you in my Top 8."
+  ],
+  "feed": [
+    "Loot drop! Crescent biscuit, mint condition.",
+    "One for me, one for… also me. No refunds.",
+    "I saved you the last one. Don’t tell the channel."
+  ],
+  "nap": "AFK. Wake me when the modem sings.",
+  "wake": "Back from AFK. Who touched my mixtape?",
+  "unavailable": "Lost carrier. I can’t see this folio from here.",
+  "samples": [
+    "Fresh disk smell. Not a byte in the guestbook.",
+    "A is in the drive. Let’s see what its header says.",
+    "Two files on deck. Time for the side-by-side."
+  ],
+  "workflow": {
+    "identify_file": "File ID. Headers first, forum lore second.",
+    "compare_builds": "A on one deck, B on the other. Spot the remix.",
+    "verify_checksum": "Bring your own reference hash. No file gets to sign its own guestbook."
+  },
+  "case": {
+    "inspect": "Header read. Size, format, fingerprint. Into the .NFO it goes.",
+    "match": "Hashes match. Keep the source of that reference handy.",
+    "mismatch": "Hash mismatch. Save the reference with your .NFO.",
+    "mixed": "This one matches. The earlier mismatch still counts in this folio.",
+    "identical": "Same hash on both decks. No difference showed up in this check.",
+    "different": "Different builds. The side-by-side has the receipts.",
+    "critique": "Second opinion just landed. Check the posts it cites, not the attitude.",
+    "export": "Ledger copied. Take those receipts with you."
+  }
+}

@@ -1,0 +1,248 @@
+.skelly-pet {
+  --edge: clamp(8px, 1.25vw, 18px);
+  --sprite-width: min(clamp(96px, 12vw, 168px), 36dvh);
+  position: fixed;
+  z-index: 4;
+  right: max(var(--edge), env(safe-area-inset-right));
+  bottom: max(var(--edge), env(safe-area-inset-bottom));
+  pointer-events: none;
+}
+
+.skelly-pet[data-corner$="left"] {
+  right: auto;
+  left: max(var(--edge), env(safe-area-inset-left));
+}
+
+.skelly-pet[data-corner^="top"] {
+  bottom: auto;
+  top: max(var(--edge), env(safe-area-inset-top));
+}
+
+.skelly-pet button {
+  pointer-events: auto;
+}
+
+.skelly-pet button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.skelly-pet .skelly-sprite,
+.skelly-pet[data-small="false"] .skelly-sprite:hover:not(:disabled) {
+  display: block;
+  width: var(--sprite-width);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.skelly-pet .skelly-sprite:active {
+  cursor: grabbing;
+}
+
+.skelly-art {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  background: url('/skelly.webp') no-repeat 0 0 / 200% 200%;
+  filter: drop-shadow(1px 3px 2px rgb(17 13 21 / 70%));
+  transform-origin: 50% 95%;
+}
+
+.skelly-art.pose-delighted {
+  background-position: 100% 0;
+}
+
+.skelly-art.pose-treat {
+  background-position: 0 100%;
+}
+
+.skelly-art.pose-nap {
+  background-position: 100% 100%;
+}
+
+.skelly-description {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skelly-options,
+.skelly-pet[data-small="true"] .skelly-sprite {
+  color: #251c23;
+  border: 2px solid;
+  border-color: #ffe2b5 #80513e #754535 #ffca8e;
+  background: #efaa73;
+  border-radius: 0;
+}
+
+.skelly-options {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 30px;
+  min-height: 0;
+  padding: 0;
+}
+
+.skelly-pet[data-small="true"] .skelly-sprite {
+  width: auto;
+  padding: 5px 13px;
+  font: 600 .98rem/1.2 var(--display);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.skelly-voice,
+.skelly-actions {
+  position: absolute;
+  right: calc(100% - 4px);
+  width: max-content;
+  max-width: min(234px, calc(100vw - var(--sprite-width) - var(--edge) - var(--edge) - 12px));
+}
+
+.skelly-pet[data-corner$="left"] :is(.skelly-voice, .skelly-actions) {
+  right: auto;
+  left: calc(100% - 4px);
+}
+
+.skelly-voice {
+  top: 10%;
+}
+
+.skelly-pet[data-pose="nap"] .skelly-voice {
+  top: 42%;
+}
+
+.skelly-bubble {
+  display: block;
+  position: relative;
+  padding: 8px 12px 10px;
+  border: 2px solid;
+  border-color: #d69fbf #72576c #72576c #d69fbf;
+  background: #241b27;
+  color: var(--on-dark);
+  font: .94rem/1.4 var(--terminal);
+  text-wrap: pretty;
+  box-shadow: 1px 3px 5px #16101980;
+}
+
+.skelly-bubble b,
+.skelly-handle {
+  display: block;
+  font: bold .79rem/1.4 var(--terminal);
+  color: #f1b6fa;
+}
+
+.skelly-handle {
+  background: #603e58;
+  color: var(--on-dark);
+  padding: 3px 7px;
+}
+
+.skelly-bubble::after {
+  content: '';
+  position: absolute;
+  top: 15px;
+  right: -9px;
+  border-block: 5px solid transparent;
+  border-left: 10px solid #b389a5;
+}
+
+.skelly-pet[data-corner$="left"] .skelly-bubble::after {
+  right: auto;
+  left: -9px;
+  border-left: 0;
+  border-right: 10px solid #b389a5;
+}
+
+.skelly-actions {
+  bottom: 0;
+  display: grid;
+  gap: 2px;
+  padding: 5px;
+  max-height: calc(100dvh - var(--edge) - var(--edge));
+  overflow-y: auto;
+  border: 2px solid;
+  border-color: var(--rim);
+  background: var(--sheet);
+  pointer-events: auto;
+}
+
+.skelly-actions[hidden] {
+  display: none;
+}
+
+.skelly-pet[data-corner^="top"] .skelly-actions {
+  bottom: auto;
+  top: 0;
+}
+
+.skelly-actions button {
+  padding: 6px 11px;
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: .88rem;
+  text-align: left;
+}
+
+.skelly-actions button:hover:not(:disabled),
+.skelly-options:hover:not(:disabled),
+.skelly-pet[data-small="true"] .skelly-sprite:hover {
+  color: var(--ink);
+  background: var(--wash);
+}
+
+@media (max-width: 600px) {
+  .skelly-pet {
+    --sprite-width: min(clamp(72px, 23vw, 106px), 36dvh);
+  }
+
+  .skelly-bubble {
+    padding: 10px 13px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pose-delighted {
+    animation: skelly-lift .48s ease-out;
+  }
+
+  .pose-treat {
+    animation: skelly-nibble .5s ease-out;
+  }
+
+  .pose-nap {
+    animation: skelly-settle .55s ease-out;
+  }
+
+  @keyframes skelly-lift {
+    38% {
+      transform: translateY(-4px) rotate(-2deg);
+    }
+  }
+
+  @keyframes skelly-nibble {
+    40% {
+      transform: rotate(2deg);
+    }
+  }
+
+  @keyframes skelly-settle {
+    from {
+      transform: translateY(-3px);
+    }
+  }
+}

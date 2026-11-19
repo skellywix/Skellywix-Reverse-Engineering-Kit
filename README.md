@@ -4,6 +4,8 @@ A container stack for static analysis and controlled dynamic execution of untrus
 
 This project processes hostile input. Read [SECURITY.md](SECURITY.md) and [the design](docs/design.md) before deployment.
 
+For an interactive workbench that never runs specimens, open the **[Skellywix RE Kit: Bitrot Den](static-inspection/README.md)**. It starts independently of the container stack and needs no model credentials for file identification, build comparison, or checksum verification.
+
 ## Components
 
 | Path | Role |
