@@ -153,29 +153,54 @@ The image job proves that every pinned download URL, SHA-256 check, build stage,
 
 ## Supply-chain pins
 
-The base images are digest-pinned, apt uses the dated Ubuntu snapshot `20261027T000000Z`, Python packages are hash-locked in `container/requirements.lock`, and every downloaded artifact is verified before extraction. Exact public URLs and SHA-256 values are in `container/Dockerfile`.
+The base images are digest-pinned, apt uses the dated Ubuntu snapshot `20261118T000000Z`, Python packages are hash-locked in `container/requirements.lock`, and every downloaded artifact is verified before extraction. Exact public URLs and SHA-256 values are in `container/Dockerfile`.
 
 | Artifact | Version | SHA-256 |
 |---|---|---|
-| Ubuntu image index | 24.04 | `73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8` |
+| Ubuntu image index | 24.04 | `ab18ecc70c55c703eae968948f9f1dbbe662aa8d9badac7c982e6a6237b9d74c` |
 | Rust image index | 1.100.0-bookworm | `ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea` |
-| OMP | 18.22.0 | `f706b27ba845834d8f8360705a2e9ba1534f3593fa24411d41358272de33642b` |
-| Node.js | 22.23.4 | `1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce` |
-| REA | 6.8.0 | `8d542ec76a9cb350584b60a6c9c088706ff812d5bb5b094c20c95b6dc25698bb` |
-| REA lockfile | commit `160d821ac9a0310afcb8d1fc427862dd6508add5` | `1d8fa0f33b3125d3e601ec832b18d9d35b37453f36340dc0507f065a8de158ad` |
-| Temurin JDK | 25.0.5+8 | `68982529869257d0ee6b824ec5aa270ff8b118bb438670da0b97ebdab178d7fb` |
-| Ghidra | 12.1.4 | `ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db` |
-| JADX | 1.5.6 | `545ea2be9c242511bc145755cf4bda2485ade42966e096f8b4d3da2a230e8974` |
+| OMP | 19.0.1 | `6ceef04430851bb1050c6fda3af467412eb44a11df0a6ff8121fe601013c5415` |
+| Node.js | 22.23.5 | `cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8` |
+| REA | 6.9.0 | `322338a1505e2557702a16012e7d46abdb5729641d98938662762dfbfb79262a` |
+| REA lockfile | commit `d74549e495c58eb4a560279fd9f05508401ea0a0` | `3cbce8c78e6fa4ab69618dcf9a27ea1f34670bc1664ea777fd7993901e08a163` |
+| Temurin JDK | 25.0.5.1+2 | `760f91b22c3efc9bd1b64ff950598231be82928cc807e30691a0e7a2995a62c0` |
+| Ghidra | 12.2 | `2c2cd776db3c1f6a097ba418922378ac3649cadd5e844a6f5f088ae628a7be67` |
+| JADX | 1.5.7 | `1755e4242ade71a077438723689f404079592ec7764a3a0572f98fef94ebcbf3` |
 | Zeek | 9.0.1 | `fbee2eb5ee6ebd64ef0db830fbb9fa1d702d58807643c719e8338a59329197f2` |
-| radare2 | 6.2.4 | `7019eedc0e0e87d1f53d6b8f5fc62b898567679c5efdce7fbfc557c9e7655e90` |
+| radare2 | 6.2.6 | `0dddf90e217e38a6a658881b9ec7e217198487c75b7f82a332b3cbd30834636f` |
 | Binwalk | 3.1.0 | `99d5dc70f5021c55624f098adae4d1de9c1c07d000475664704b675aad7e0811` |
 | capa | 10.0.0 | `96cb5115f495024a478b0e9f9f77f9027058155589235fbd4c50e7382055fcca` |
-| YARA-X | 1.22.1 | `c0ff80408d57b94f8348b9b19b5c70fb03e6471e7fdd761c97e0b4876804eecf` |
+| YARA-X | 1.23.0 | `da0c17f23fc743dcd44ad6d3135c906a4c0d197685b661c4cdc923c2f8967a64` |
 | Detect It Easy | 3.21 | `96e8e82e822e3ca8a829536312b92e8b241147fe38c8ab29c9dbfc1ab21aa25d` |
 | WABT | 1.0.42 | `84895407a6bbb80e918f33b16b2fb2206021c150b6bc9ff6f761263a745ab131` |
-| wasm-tools | 1.262.0 | `655b8df67d54c3ef9b52fc237c4e94bbfbb5f5f43825245cb0940a7002a9ed65` |
+| wasm-tools | 1.263.0 | `21c036c1740a0552124c79c6e2170cb61c5b016005671a6d5bc06cf642165431` |
 | Binaryen | 133 | `2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489` |
-| Wasmtime | 50.0.0 | `77c19ee0437991f9ac7837b9c269d9c7076744f85dad263fea5214cc2723c7ff` |
+| Wasmtime | 50.0.3 | `c59133a9334e96eaca5e26f0d4c35199bfe43ab34049aa254ef4b47af1361476` |
+
+### Dependency candidates
+
+The **Dependency candidates** GitHub Actions workflow runs weekly or on demand.
+Download its `dependency-candidates` receipt to see candidate versions, hashes,
+and checks that failed. The job downloads the candidate bytes on a disposable
+runner, but retains only the receipt. It doesn't run candidate programs, push
+pin changes, publish images, or deploy.
+
+- A REA release is eligible only when published to npm. Review the tarball and
+  immutable, release-matched lockfile as one change. The agent image copies the
+  skill shipped in that tarball; don't update it separately.
+- Native release assets, the Binwalk crate, and Node LTS stay in the existing
+  platform and release lanes. Use the release receipt to review URL and digest
+  changes along with any version-specific build paths.
+- Review the Python wheel set together against `container/requirements.lock`.
+  A workbench UI candidate includes its new manifest and npm lock; rebuild the
+  checked-in UI and check its third-party notices in the same pull request.
+- Image candidates retain the supported platform. An Ubuntu snapshot candidate
+  uses signed archive metadata; the build verifies and resolves the actual
+  packages. Review Actions updates as commit pins, not floating tags.
+
+Keep the prior deployed image digest until the new build passes checks, including
+the applicable local analysis or workbench smoke tests. Revert the reviewed
+dependency commit if the pins need to be rolled back.
 
 ## Accepted risks
 
