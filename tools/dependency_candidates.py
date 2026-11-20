@@ -1,9 +1,10 @@
-"""Check published dependency candidates without installing or running them."""
+"""Stage published dependency candidates or update the local REA build pins."""
 
 import argparse
 import base64
 import hashlib
 import json
+import os
 import platform
 import re
 import shutil
@@ -21,7 +22,15 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 NPM = "https://registry.npmjs.org"
 GITHUB = "https://api.github.com"
-REA_SKILL = "skills/reverse-engineer-anything/SKILL.md"
+REA_REPOSITORY = "morluto/rea"
+REA_SOURCE_URL = f"https://codeload.github.com/{REA_REPOSITORY}/tar.gz/"
+REA_TAG = re.compile(r"rea-agents-([0-9]+\.[0-9]+\.[0-9]+)")
+REA_PIN = re.compile(
+    r"(?m)^# REA source release (?P<version>[0-9]+\.[0-9]+\.[0-9]+)"
+    rf"(?P<command>\r?\nRUN fetch-verified )(?P<url>{re.escape(REA_SOURCE_URL)}[0-9a-f]{{40}})"
+    r"(?P<separator> \\\r?\n +)[0-9a-f]{64}(?= /tmp/rea-source\.tgz )"
+)
+REA_SKILL = ".agents/skills/reverse-engineer-anything/SKILL.md"
 ROOT = Path(__file__).resolve().parents[1]
 METADATA_LIMIT = 8 * 1024**2
 ARCHIVE_LIMIT = 2 * 1024**3
@@ -102,11 +111,20 @@ def npm_tarball(package, metadata, scratch, fetch):
     return {"url": url, "sha256": digest}
 
 
-def tar_members(path, names):
+def tar_members(path, names, *, source_root=None):
     """Read only named regular files; do not unpack arbitrary tar members."""
     result = {}
+    seen = set()
     with tarfile.open(path, "r:gz") as archive:
         for member in archive:
+            if source_root is not None:
+                parts = member.name.split("/")
+                if (parts[0] != source_root or any(part in ("", ".", "..") for part in parts)
+                        or "\\" in member.name or member.type not in (tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.DIRTYPE)
+                        or member.mode & 0o7000 or member.name in seen
+                        or parts[1:] == ["npm-shrinkwrap.json"]):
+                    raise ValueError("unsafe member in the REA source archive")
+                seen.add(member.name)
             if member.name not in names:
                 continue
             if member.name in result or not member.isfile() or not 0 < member.size <= METADATA_LIMIT:
@@ -121,10 +139,12 @@ def tar_members(path, names):
 def validate_npm_lock(lock, manifest):
     packages = lock["packages"]
     root = packages[""]
-    keys = ("name", "version", "engines", "dependencies", "optionalDependencies", "peerDependencies")
-    if (lock["lockfileVersion"] != 3 or lock.get("version") != manifest.get("version")
+    keys = ("name", "version", "engines", "dependencies", "devDependencies",
+            "optionalDependencies", "peerDependencies")
+    if (lock["lockfileVersion"] != 3 or lock.get("name") != manifest.get("name")
+            or lock.get("version") != manifest.get("version")
             or any(root.get(key) != manifest.get(key) for key in keys)):
-        raise ValueError("npm lock does not match the published manifest")
+        raise ValueError("npm lock does not match the REA manifest")
     for name, entry in packages.items():
         if not name:
             continue
@@ -147,32 +167,68 @@ def release_commit(repository, tag, scratch, fetch):
 
 
 def stage_rea(scratch, current, fetch=download):
-    metadata = read_json(NPM + "/rea-agents/latest", scratch, fetch)
-    version = metadata["version"]
+    release = read_json(f"{GITHUB}/repos/{REA_REPOSITORY}/releases/latest", scratch, fetch)
+    tag = release.get("tag_name", "")
+    match = REA_TAG.fullmatch(tag)
+    if not match or release.get("draft") is not False or release.get("prerelease") is not False:
+        raise ValueError("expected a stable GitHub release for rea-agents")
+    version = match[1]
     if stable(version) <= current:
         return None
-    package = npm_tarball("rea-agents", metadata, scratch, fetch)
-    manifest_member = "package/package.json"
-    entry_member = "package/scripts/rea.mjs"
-    skill_member = "package/" + REA_SKILL
-    contents = tar_members(scratch / "package.tgz", {manifest_member, entry_member, skill_member})
+
+    commit = release_commit(REA_REPOSITORY, tag, scratch, fetch)
+    root = f"rea-{commit}"
+    url = REA_SOURCE_URL + commit
+    archive = scratch / "rea-source.tgz"
+    digest = fetch(url, archive, ARCHIVE_LIMIT)
+    manifest_member = f"{root}/package.json"
+    lock_member = f"{root}/package-lock.json"
+    skill_member = f"{root}/{REA_SKILL}"
+    contents = tar_members(
+        archive, {manifest_member, lock_member, skill_member, f"{root}/scripts/rea.mjs",
+                  f"{root}/scripts/generate-skill-metadata.mjs"}, source_root=root,
+    )
     manifest = json.loads(contents[manifest_member])
     if manifest["name"] != "rea-agents" or manifest["version"] != version:
-        raise ValueError("published archive manifest does not match package identity")
-    commit = release_commit("morluto/rea", "rea-agents-" + version, scratch, fetch)
-    source = f"https://raw.githubusercontent.com/morluto/rea/{commit}/"
-    lock_path = scratch / "package-lock.json"
-    lock_url = source + "package-lock.json"
-    lock_digest = fetch(lock_url, lock_path, METADATA_LIMIT)
-    validate_npm_lock(json.loads(lock_path.read_bytes()), manifest)
-    skill_digest = hashlib.sha256(contents[skill_member]).hexdigest()
+        raise ValueError("REA source manifest does not match the release")
+    validate_npm_lock(json.loads(contents[lock_member]), manifest)
     return {
         "version": version,
-        "package": package,
-        "lock": {"url": lock_url, "sha256": lock_digest},
-        "skill": {"path": REA_SKILL, "sha256": skill_digest},
+        "commit": commit,
+        "source": {"url": url, "sha256": digest},
+        "lock": {"path": "package-lock.json", "sha256": hashlib.sha256(contents[lock_member]).hexdigest()},
+        "skill": {"path": REA_SKILL, "sha256": hashlib.sha256(contents[skill_member]).hexdigest()},
         "node": manifest["engines"]["node"],
     }
+
+
+def rea_pin(dockerfile):
+    matches = list(REA_PIN.finditer(dockerfile))
+    if len(matches) != 1:
+        raise ValueError("expected exactly one matching REA pin in the Dockerfile")
+    return matches[0]
+
+
+def update_rea(scratch, dockerfile, fetch=download):
+    """Pin the verified source archive as one unit: tool, lockfile, and skill."""
+    original = dockerfile.read_bytes()
+    contents = original.decode("utf-8")
+    pin = rea_pin(contents)
+    result = stage_rea(scratch, stable(pin["version"]), fetch)
+    if result is None:
+        return None
+
+    source = result["source"]
+    contents = (contents[:pin.start("version")] + result["version"] + pin["command"]
+                + source["url"] + pin["separator"] + source["sha256"] + contents[pin.end():])
+    with TemporaryDirectory(prefix=".rea-update-", dir=dockerfile.parent) as directory:
+        replacement = Path(directory) / dockerfile.name
+        replacement.write_bytes(contents.encode("utf-8"))
+        shutil.copymode(dockerfile, replacement)
+        if dockerfile.read_bytes() != original:
+            raise ValueError("Dockerfile changed while preparing the REA update")
+        os.replace(replacement, dockerfile)
+    return result
 
 
 def match_release(releases, tag_pattern, asset_pattern, current, *, major=None):
@@ -400,7 +456,7 @@ def sources():
             raise ValueError(f"expected one Dockerfile pin matching {pattern}")
         return matches.pop()
 
-    rea = current(r"https://registry\.npmjs\.org/rea-agents/-/rea-agents-([\d.]+)\.tgz")
+    rea = rea_pin(dockerfile)["version"]
     yield "rea-agents", stage_rea, (stable(rea),)
     release_pins = dict(re.findall(r"https://github\.com/([^/]+/[^/]+)/releases/download/([^/]+)/", dockerfile))
     if release_pins.keys() != RELEASES.keys():
@@ -427,10 +483,18 @@ def sources():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", action="append", help="stage only this source (repeatable)")
-    parser.add_argument("--output", required=True, type=Path, help="path for the JSON receipt")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--source", action="append", help="stage only this source (repeatable)")
+    selection.add_argument("--apply-rea", action="store_true", help="update the local REA Dockerfile pins")
+    parser.add_argument("--output", type=Path, help="path for the JSON receipt")
     args = parser.parse_args()
-    available = {name: (stage, inputs) for name, stage, inputs in sources()}
+    dockerfile = ROOT / "container/Dockerfile"
+    if args.output is None and not args.apply_rea:
+        parser.error("--output is required when staging candidates")
+    if args.output is not None and args.output.resolve() == dockerfile.resolve():
+        parser.error("--output cannot overwrite the Dockerfile")
+    available = ({"rea-agents": (update_rea, (dockerfile,))} if args.apply_rea
+                 else {name: (stage, inputs) for name, stage, inputs in sources()})
     selected = args.source or list(available)
     if unknown := set(selected) - available.keys():
         parser.error("unknown sources: " + ", ".join(sorted(unknown)))
@@ -442,16 +506,22 @@ def main():
             with TemporaryDirectory(prefix="re-kit-candidate-") as directory:
                 scratch = Path(directory)
                 result = stage(scratch, *inputs)
-            report[name] = {"status": "staged", "candidate": result} if result else {"status": "no-new-candidate"}
+            status = "no-new-candidate"
+            if result is not None:
+                status = "updated" if args.apply_rea else "staged"
+            report[name] = {"status": status, "candidate": result} if result else {"status": status}
         except HTTPError as error:
             report[name] = {"status": "failed", "http_status": error.code}
             failed = True
-        except (OSError, EOFError, ValueError, KeyError, TypeError, StopIteration, tarfile.TarError, subprocess.TimeoutExpired) as error:
+        except (OSError, EOFError, ValueError, KeyError, TypeError, StopIteration,
+                tarfile.TarError, subprocess.TimeoutExpired) as error:
             # Don't print upstream response bodies, redirected location headers, or subprocess output.
             report[name] = {"status": "failed", "error_type": type(error).__name__}
             failed = True
-        print(f"{name}: {report[name]['status']}", flush=True)
-    args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        version = f" to {result['version']}" if report[name]["status"] == "updated" else ""
+        print(f"{name}: {report[name]['status']}{version}", flush=True)
+    if args.output is not None:
+        args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return int(failed)
 
 

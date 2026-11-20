@@ -78,6 +78,39 @@ RUN cargo build --release --locked \
  && install -m 0755 target/release/binwalk /usr/local/bin/binwalk
 
 # ---------------------------------------------------------------------------
+FROM base AS node-runtime
+RUN apt-get update && apt-get install -y --no-install-recommends git xz-utils \
+ && rm -rf /var/lib/apt/lists/*
+RUN fetch-verified https://nodejs.org/dist/v22.23.5/node-v22.23.5-linux-x64.tar.xz \
+      cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8 /tmp/node.txz \
+ && mkdir /opt/node && tar -xJf /tmp/node.txz -C /opt/node --strip-components=1 && rm /tmp/node.txz
+ENV PATH=/opt/node/bin:${PATH} npm_config_audit=false npm_config_fund=false npm_config_update_notifier=false
+
+FROM node-runtime AS rea-build
+ENV HUSKY=0
+RUN useradd --uid 10001 --create-home --shell /bin/sh rea-build \
+ && install -d -o rea-build /src /opt/rea
+USER rea-build
+WORKDIR /src
+# REA source release 6.10.1
+RUN fetch-verified https://codeload.github.com/morluto/rea/tar.gz/8bb01b514ac766c0c3ecc8f362bd38186eaec9c2 \
+      d8d2627292db6cabdb554eaa4d720c28e6402166d3e8e6a259afed59d3fa2cc4 /tmp/rea-source.tgz \
+ && tar --no-same-owner --no-same-permissions -xzf /tmp/rea-source.tgz --strip-components=1 \
+ && rm /tmp/rea-source.tgz \
+ && test ! -e npm-shrinkwrap.json \
+ && npm ci --ignore-scripts --engine-strict \
+ && npm run metadata:check \
+ && npm run compile \
+ && npm run artifacts:skills \
+ && npm pack --ignore-scripts --pack-destination /tmp --quiet \
+ && tar --no-same-owner --no-same-permissions -xzf /tmp/rea-agents-*.tgz -C /opt/rea --strip-components=1 \
+ && rm /tmp/rea-agents-*.tgz \
+ && test ! -e /opt/rea/npm-shrinkwrap.json \
+ && test -s /opt/rea/skills/reverse-engineer-anything/SKILL.md \
+ && cp package-lock.json /opt/rea/ \
+ && npm --prefix /opt/rea ci --omit=dev --omit=optional --ignore-scripts --engine-strict
+
+# ---------------------------------------------------------------------------
 FROM base AS tools
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -142,17 +175,8 @@ RUN fetch-verified https://github.com/WebAssembly/wabt/releases/download/1.0.42/
 COPY --from=zeek-build /opt/zeek /opt/zeek
 COPY --from=binwalk-build /usr/local/bin/binwalk /usr/local/bin/binwalk
 
-# Node 22 LTS, then the REA npm tarball and its release-matched lockfile.
-RUN fetch-verified https://nodejs.org/dist/v22.23.5/node-v22.23.5-linux-x64.tar.xz \
-      cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8 /tmp/node.txz \
- && mkdir /opt/node && tar -xJf /tmp/node.txz -C /opt/node --strip-components=1 && rm /tmp/node.txz
-ENV PATH=/opt/node/bin:${PATH} npm_config_audit=false npm_config_fund=false npm_config_update_notifier=false
-RUN fetch-verified https://registry.npmjs.org/rea-agents/-/rea-agents-6.9.0.tgz \
-      322338a1505e2557702a16012e7d46abdb5729641d98938662762dfbfb79262a /tmp/rea.tgz \
- && mkdir /opt/rea && tar -xzf /tmp/rea.tgz -C /opt/rea --strip-components=1 && rm /tmp/rea.tgz \
- && fetch-verified https://raw.githubusercontent.com/morluto/rea/d74549e495c58eb4a560279fd9f05508401ea0a0/package-lock.json \
-      3cbce8c78e6fa4ab69618dcf9a27ea1f34670bc1664ea777fd7993901e08a163 /opt/rea/package-lock.json \
- && npm --prefix /opt/rea ci --omit=dev --omit=optional --ignore-scripts
+COPY --from=node-runtime /opt/node /opt/node
+COPY --from=rea-build /opt/rea /opt/rea
 
 # Python tools (Unblob, Frida, Scapy) from a hash-locked set; pip refuses any unhashed or source-only package.
 COPY requirements.lock /tmp/requirements.lock

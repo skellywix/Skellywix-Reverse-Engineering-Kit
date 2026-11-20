@@ -62,10 +62,13 @@ distribution's `fstrim.timer` after jobs are deleted to return unused blocks.
 
 ## Build and install
 
-Build all three images, provide an upstream resolver file, and start only the egress proxy:
+Build all three images, provide an upstream resolver file, and start only the egress proxy.
+The build automatically checks for a stable REA release and updates the local REA pins before
+building. Use `sh container/build.sh --pinned` to build exactly what's in `container/Dockerfile`
+without checking for a newer REA release.
 
 ```bash
-docker compose -f container/compose.yaml --profile build-only build re-agent re-exec re-egress
+sh container/build.sh
 AGENT_IMAGE=$(docker image inspect --format '{{.Id}}' re-lab-agent:local)
 EXEC_IMAGE=$(docker image inspect --format '{{.Id}}' re-lab-exec:local)
 install -d -m 0700 /etc/re-lab
@@ -161,8 +164,7 @@ The base images are digest-pinned, apt uses the dated Ubuntu snapshot `20261118T
 | Rust image index | 1.100.0-bookworm | `ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea` |
 | OMP | 19.0.1 | `6ceef04430851bb1050c6fda3af467412eb44a11df0a6ff8121fe601013c5415` |
 | Node.js | 22.23.5 | `cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8` |
-| REA | 6.9.0 | `322338a1505e2557702a16012e7d46abdb5729641d98938662762dfbfb79262a` |
-| REA lockfile | commit `d74549e495c58eb4a560279fd9f05508401ea0a0` | `3cbce8c78e6fa4ab69618dcf9a27ea1f34670bc1664ea777fd7993901e08a163` |
+| REA source archive (includes the lockfile and skill source) | See `container/Dockerfile` | See `container/Dockerfile` |
 | Temurin JDK | 25.0.5.1+2 | `760f91b22c3efc9bd1b64ff950598231be82928cc807e30691a0e7a2995a62c0` |
 | Ghidra | 12.2 | `2c2cd776db3c1f6a097ba418922378ac3649cadd5e844a6f5f088ae628a7be67` |
 | JADX | 1.5.7 | `1755e4242ade71a077438723689f404079592ec7764a3a0572f98fef94ebcbf3` |
@@ -177,6 +179,29 @@ The base images are digest-pinned, apt uses the dated Ubuntu snapshot `20261118T
 | Binaryen | 133 | `2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489` |
 | Wasmtime | 50.0.3 | `c59133a9334e96eaca5e26f0d4c35199bfe43ab34049aa254ef4b47af1361476` |
 
+### REA updates
+
+`sh container/build.sh` resolves the latest stable release from
+[the official REA GitHub repository](https://github.com/morluto/rea/releases). It fetches
+the source archive by commit, checks the manifest, matching lockfile, and skill source,
+then updates the version, commit, and SHA-256 together in `container/Dockerfile`.
+A failed check stops the build without changing the pin. To update it without building,
+run `python3 tools/dependency_candidates.py --apply-rea`.
+
+The image builds REA from that archive and generates the complete REA skill directory,
+including its references, from the same source. It installs dependencies from the
+upstream lockfile without running dependency install scripts. A skill-only change
+ships automatically with the next stable GitHub release. The build doesn't download
+the published `rea-agents` package from npm.
+
+The updater doesn't switch the dispatcher's image IDs or restart any service. Verify new images
+before promoting them, and keep the old IDs for rollback. To rebuild an older revision without
+selecting the latest REA release again, use `sh container/build.sh --pinned`.
+
+REA 6.10 changes the Evidence format. Recreate older Evidence, bundles, and snapshots before
+comparing them with new output. See the
+[upstream migration notes](https://github.com/morluto/rea/releases/tag/rea-agents-6.10.1).
+
 ### Dependency candidates
 
 The **Dependency candidates** GitHub Actions workflow runs weekly or on demand.
@@ -185,9 +210,8 @@ and checks that failed. The job downloads the candidate bytes on a disposable
 runner, but retains only the receipt. It doesn't run candidate programs, push
 pin changes, publish images, or deploy.
 
-- A REA release is eligible only when published to npm. Review the tarball and
-  immutable, release-matched lockfile as one change. The agent image copies the
-  skill shipped in that tarball; don't update it separately.
+- The REA receipt records the source commit and the archive, lockfile, and skill source
+  hashes. The workflow doesn't apply the update.
 - Native release assets, the Binwalk crate, and Node LTS stay in the existing
   platform and release lanes. Use the release receipt to review URL and digest
   changes along with any version-specific build paths.

@@ -35,34 +35,36 @@ class ReaCandidateTests(unittest.TestCase):
         self.skill = b"# Example skill\n"
         self.entry = b"throw new Error('staging must not execute JS');\n"
 
-    def stage(self, *, omit_skill=False, corrupt_integrity=False):
+    def stage(self, *, omit_skill=False, prerelease=False, dockerfile=None,
+              extra_member=None, version=None):
         blob = io.BytesIO()
+        root = "rea-" + self.commit
+        manifest = self.manifest | {"version": version or self.version}
         members = {
-            "package/package.json": json.dumps(self.manifest).encode(),
-            "package/scripts/rea.mjs": self.entry,
+            "package.json": json.dumps(manifest).encode(),
+            "package-lock.json": json.dumps(self.lock).encode(),
+            "scripts/rea.mjs": self.entry,
+            "scripts/generate-skill-metadata.mjs": self.entry,
         }
         if not omit_skill:
-            members["package/" + updater.REA_SKILL] = self.skill
+            members[".agents/skills/reverse-engineer-anything/SKILL.md"] = self.skill
+        if extra_member:
+            members[extra_member] = b"unexpected"
         with tarfile.open(fileobj=blob, mode="w:gz") as archive:
             for name, content in members.items():
-                info = tarfile.TarInfo(name)
+                info = tarfile.TarInfo(f"{root}/{name}")
                 info.size = len(content)
                 archive.addfile(info, io.BytesIO(content))
-        package = blob.getvalue()
-        tarball = updater.NPM + f"/rea-agents/-/rea-agents-{self.version}.tgz"
-        source = f"https://raw.githubusercontent.com/morluto/rea/{self.commit}/"
-        integrity = hashlib.sha512(package if not corrupt_integrity else b"wrong").digest()
-        lock = json.dumps(self.lock).encode()
+        source = blob.getvalue()
+        tag = f"rea-agents-{self.version}"
         responses = {
-            updater.NPM + "/rea-agents/latest": json.dumps({
-                **self.manifest,
-                "dist": {"tarball": tarball, "integrity": "sha512-" + base64.b64encode(integrity).decode()},
+            updater.GITHUB + "/repos/morluto/rea/releases/latest": json.dumps({
+                "tag_name": tag, "draft": False, "prerelease": prerelease,
             }).encode(),
-            tarball: package,
-            updater.GITHUB + f"/repos/morluto/rea/git/ref/tags/rea-agents-{self.version}": json.dumps({
+            updater.GITHUB + f"/repos/morluto/rea/git/ref/tags/{tag}": json.dumps({
                 "object": {"type": "commit", "sha": self.commit},
             }).encode(),
-            source + "package-lock.json": lock,
+            f"https://codeload.github.com/morluto/rea/tar.gz/{self.commit}": source,
         }
 
         def fetch(url, path, limit):
@@ -70,22 +72,25 @@ class ReaCandidateTests(unittest.TestCase):
             return hashlib.sha256(responses[url]).hexdigest()
 
         with TemporaryDirectory() as scratch:
-            result = updater.stage_rea(Path(scratch), (6, 8, 0), fetch=fetch)
-        return result, hashlib.sha256(package).hexdigest(), hashlib.sha256(lock).hexdigest()
+            if dockerfile is None:
+                result = updater.stage_rea(Path(scratch), (6, 8, 0), fetch=fetch)
+            else:
+                result = updater.update_rea(Path(scratch), dockerfile, fetch=fetch)
+        return result, hashlib.sha256(source).hexdigest(), hashlib.sha256(members["package-lock.json"]).hexdigest()
 
-    def test_receipt_links_verified_package_lock_and_bundled_skill(self):
-        result, package_hash, lock_hash = self.stage()
+    def test_receipt_links_one_github_archive_to_lock_and_skill(self):
+        result, source_hash, lock_hash = self.stage()
         self.assertEqual(result["version"], self.version)
-        self.assertEqual(result["package"]["sha256"], package_hash)
+        self.assertEqual(result["source"]["sha256"], source_hash)
         self.assertEqual(result["lock"]["sha256"], lock_hash)
         self.assertEqual(result["skill"]["sha256"], hashlib.sha256(self.skill).hexdigest())
-        self.assertIn(self.commit, result["lock"]["url"])
+        self.assertEqual(result["source"]["url"], f"https://codeload.github.com/morluto/rea/tar.gz/{self.commit}")
 
-    def test_integrity_failure_has_no_candidate(self):
-        with self.assertRaisesRegex(ValueError, "integrity"):
-            self.stage(corrupt_integrity=True)
+    def test_archive_identifies_the_release_version(self):
+        with self.assertRaisesRegex(ValueError, "manifest"):
+            self.stage(version="6.8.0")
 
-    def test_package_without_bundled_skill_has_no_candidate(self):
+    def test_archive_without_authored_skill_has_no_candidate(self):
         with self.assertRaisesRegex(ValueError, "missing.*skill"):
             self.stage(omit_skill=True)
 
@@ -98,6 +103,49 @@ class ReaCandidateTests(unittest.TestCase):
         self.lock["packages"]["node_modules/sample"]["resolved"] = "https://example.invalid/sample.tgz"
         with self.assertRaisesRegex(ValueError, "registry"):
             self.stage()
+
+    def test_prerelease_is_not_eligible(self):
+        with self.assertRaisesRegex(ValueError, "stable GitHub release"):
+            self.stage(prerelease=True)
+
+    def test_update_changes_source_version_and_digest_and_is_idempotent(self):
+        with TemporaryDirectory() as directory:
+            dockerfile = Path(directory) / "Dockerfile"
+            before = self.dockerfile()
+            dockerfile.write_bytes(before.encode())
+            _, source_hash, _ = self.stage(dockerfile=dockerfile)
+            expected = (before.replace("6.8.0", self.version)
+                        .replace("b" * 40, self.commit)
+                        .replace("c" * 64, source_hash))
+            self.assertEqual(dockerfile.read_bytes(), expected.encode())
+            result, _, _ = self.stage(dockerfile=dockerfile)
+            self.assertIsNone(result)
+            self.assertEqual(dockerfile.read_bytes(), expected.encode())
+
+    def test_failed_update_leaves_original_pins(self):
+        for failure, message in (
+            ({"version": "6.8.0"}, "manifest"),
+            ({"extra_member": "npm-shrinkwrap.json"}, "unsafe"),
+            ({"extra_member": "../../escape"}, "unsafe"),
+        ):
+            with self.subTest(failure=failure), TemporaryDirectory() as directory:
+                dockerfile = Path(directory) / "Dockerfile"
+                before = self.dockerfile()
+                dockerfile.write_bytes(before.encode())
+                with self.assertRaisesRegex(ValueError, message):
+                    self.stage(dockerfile=dockerfile, **failure)
+                self.assertEqual(dockerfile.read_bytes(), before.encode())
+
+    @staticmethod
+    def dockerfile():
+        return "\r\n".join((
+            "# unrelated",
+            "# REA source release 6.8.0",
+            "RUN fetch-verified https://codeload.github.com/morluto/rea/tar.gz/" + "b" * 40 + " \\",
+            "      " + "c" * 64 + " /tmp/rea-source.tgz \\",
+            " && mkdir /opt/rea \\",
+            "",
+        ))
 
 
 class ReleaseCandidateTests(unittest.TestCase):
