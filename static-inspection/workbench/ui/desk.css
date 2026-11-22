@@ -15,7 +15,7 @@
   --display: 'Trebuchet MS', Verdana, sans-serif;
   --terminal: Consolas, 'Lucida Console', 'Courier New', monospace;
   --rim: #a29aa2 #37333a #242027 #8a828c;
-  --page-width: 1110px;
+  --desk-gap: 10px;
   font: 15px/1.45 Tahoma, Verdana, system-ui, sans-serif;
   color: var(--ink);
   background: #151118;
@@ -30,7 +30,7 @@
 body {
   min-height: 100vh;
   margin: 0;
-  padding: 16px clamp(8px, 2.5vw, 32px) 28px;
+  padding: 10px clamp(8px, 1.5vw, 24px) 20px;
   background-color: #18141c;
   background-image: repeating-linear-gradient(151deg, transparent 0 22px, #70505b24 23px 26px, transparent 27px 41px), repeating-conic-gradient(#342832 0 25%, transparent 0 50%);
   background-size: 100% 136px, 8px 8px;
@@ -204,12 +204,6 @@ h4 {
 }
 
 /* A scene release flyer pasted above the actual workbench. All art stays local. */
-.den-shell,
-main {
-  max-width: var(--page-width);
-  margin-inline: auto;
-}
-
 .den-shell {
   background: #221923;
   border: 2px solid;
@@ -270,7 +264,7 @@ main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 190px;
+  min-height: 154px;
 }
 
 .flyer-print {
@@ -284,7 +278,7 @@ main {
 .flyer-copy {
   position: relative;
   z-index: 1;
-  padding: 19px 3% 20px;
+  padding: 12px 3%;
   width: 75%;
 }
 
@@ -298,7 +292,7 @@ h1 {
 }
 
 .wordmark {
-  width: min(45vw, 555px);
+  width: min(43vw, 515px);
   height: auto;
   flex-shrink: 1;
   min-width: 0;
@@ -402,14 +396,14 @@ h1 b {
 
 /* Beveled drive bays on the left, message-board ledger on the right. */
 main {
-  padding: 12px 0 0;
+  padding-block-start: var(--desk-gap);
 }
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.8fr) minmax(280px, 1fr);
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
   align-items: start;
-  gap: 13px;
+  gap: var(--desk-gap);
 }
 
 .workspace,
@@ -452,7 +446,8 @@ main {
 }
 
 .modes button {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -477,7 +472,7 @@ main {
 .workbody,
 .agent,
 .journal {
-  --pad: clamp(13px, 1.8vw, 21px);
+  --pad: clamp(10px, 1.35vw, 16px);
 }
 
 .workbody {
@@ -505,12 +500,18 @@ footer {
 }
 
 .workbody>p {
-  margin-bottom: 13px;
+  margin-bottom: 9px;
+}
+
+.workbody>div:has(>.sample) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  align-items: start;
+  gap: 6px;
 }
 
 .sample {
-  padding: 9px 11px;
-  margin-block: 6px;
+  padding: 7px 9px;
   background: var(--well);
   border: 1px solid #5f5761;
 }
@@ -571,8 +572,8 @@ footer {
 }
 
 .case-review {
-  padding: 10px 11px;
-  margin-block: 12px 16px;
+  padding: 7px 9px;
+  margin-block: 8px 10px;
   background: #352939;
   border: 1px dashed #ac8bad;
 }
@@ -624,7 +625,7 @@ footer {
 
 .run {
   border-top: 2px groove #655c67;
-  padding-top: 14px;
+  padding-top: 10px;
 }
 
 .run>p {
@@ -657,7 +658,7 @@ footer {
 aside {
   min-width: 0;
   display: grid;
-  gap: 13px;
+  gap: var(--desk-gap);
 }
 
 .agent,
@@ -666,7 +667,7 @@ aside {
 }
 
 :is(.agent, .journal)>.window-bar {
-  margin: 0 calc(-1 * var(--pad)) 14px;
+  margin: 0 calc(-1 * var(--pad)) 9px;
 }
 
 .agent {
@@ -884,7 +885,7 @@ th:first-child {
 footer {
   flex-wrap: wrap;
   column-gap: 16px;
-  margin-top: 13px;
+  margin-top: var(--desk-gap);
   padding: 10px 13px;
   background: #2f2a31;
   border: 2px solid;
@@ -984,7 +985,7 @@ footer small {
   }
 
   .flyer {
-    min-height: 155px;
+    min-height: 128px;
   }
 
   .wordmark {
@@ -994,6 +995,7 @@ footer small {
 
 @media (max-width: 560px) {
   body {
+    --desk-gap: 8px;
     padding: 3px 4px 16px;
   }
 
@@ -1024,11 +1026,11 @@ footer small {
   }
 
   .flyer {
-    min-height: 137px;
+    min-height: 118px;
   }
 
   .flyer-copy {
-    padding: 9px 8px;
+    padding: 6px 8px;
     width: 73%;
   }
 
@@ -1077,15 +1079,9 @@ footer small {
     display: none;
   }
 
-  main {
-    padding-top: 6px;
-  }
-
   .layout,
   aside {
-    display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
   }
 
   .modes {
@@ -1094,6 +1090,7 @@ footer small {
   }
 
   .modes button {
+    min-height: 44px;
     padding: 5px 2px;
     gap: 3px;
     font-size: .86rem;
@@ -1102,12 +1099,6 @@ footer small {
   .icon {
     width: 16px;
     height: 16px;
-  }
-
-  .workbody,
-  .agent,
-  .journal {
-    --pad: 11px;
   }
 
   .sample {
@@ -1129,10 +1120,6 @@ footer small {
 
   .meta {
     font-size: .82rem;
-  }
-
-  footer {
-    margin-top: 8px;
   }
 
   footer .actions {

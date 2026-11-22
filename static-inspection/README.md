@@ -45,6 +45,8 @@ python3 -IB -m unittest discover -s tests -v
 
 The workbench is Skellywix's dial-up-era personal homepage for static file checks. **File ID** identifies one file, **Build diff** compares two builds, and **Hash check** checks a SHA-256 against an independent reference. The worker accepts up to two 16 MiB files, retains only their size, SHA-256, format, and architecture, and never executes them. The standalone CLI above is unchanged.
 
+On wider screens, the specimens sit side by side. On narrow screens, they stack above the selected check, and the agent pact and ledger follow the file tools.
+
 Skellywix runs the den. The chrome masthead, sysop portrait, 88 × 31 buttons, and IRC-style remarks are local: no autoplay, trackers, chat server, or external assets. The webring links jump to the tools, agent pact, and ledger on the same page. The counter tracks findings, not visitors. Tap Skellywix to pet her or drag her to a corner. Under **Skellywix options**, recap the whole folio, offer a treat, let her nap, or minimize her. Escape closes her message or menu. Care and recaps never start a tool or change the case.
 
 The [lossless sprite sheet](workbench/ui/public/skelly.webp) has four transparent, hand-inked-style anime cels: tablet and delighted above, treat and nap below. [Dialogue and descriptions](workbench/ui/skelly-dialogue.json) are local. The [browser regression](tests/skelly-browser.cjs) exercises the pet without changing case data. With the desk on its default port and Playwright installed in your test environment, run `node tests/skelly-browser.cjs`.
