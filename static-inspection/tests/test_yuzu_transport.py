@@ -91,10 +91,19 @@ class TransportTests(unittest.TestCase):
             if isinstance(body, dict):
                 body = json.dumps(body).encode()
                 headers['Content-Type'] = 'application/json'
-            conn.request('GET' if body is None else 'POST', path, body, headers)
-            res = conn.getresponse()
-            data = res.read()
-            return res.status, json.loads(data) if data else None, dict(res.getheaders())
+            write_error = None
+            try:
+                conn.request('GET' if body is None else 'POST', path, body, headers)
+            except BrokenPipeError as exc:
+                if body is None:
+                    raise
+                # The handler can send its rejection before the client writes the body.
+                write_error = exc
+            with conn.getresponse() as res:
+                if write_error is not None and not 400 <= res.status < 600:
+                    raise write_error
+                data = res.read()
+                return res.status, json.loads(data) if data else None, dict(res.getheaders())
         finally:
             conn.close()
 
