@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  unit:
+  test:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out source
@@ -20,10 +20,13 @@ jobs:
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - name: Run unit tests as root
-        run: sudo python3 -m unittest discover -s tests -t . -v
+      - name: Run Windows game build contracts
+        run: sudo python3 -IB -m unittest discover -s tests -t . -v
+      - name: Run passive-inspector contracts
+        working-directory: static-inspection
+        run: python3 -IB -m unittest discover -s tests -v
 
-  lint:
+  syntax:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out source
@@ -34,46 +37,5 @@ jobs:
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - name: Lint Dockerfiles
-        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
-        with:
-          dockerfile: container/Dockerfile
-          # Immutable apt snapshot and hash-locked Python inputs are pinned without inline
-          # package versions; the checksum pipe ends in strict sha256 verification.
-          ignore: DL3008,DL3013,DL4006
-          failure-threshold: warning
-      - name: Validate Compose configuration
-        run: docker compose -f container/compose.yaml config --quiet
       - name: Byte-compile Python files
-        run: python -m py_compile $(find container tests tools -type f -name '*.py' -print)
-
-  image:
-    needs: [unit, lint]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 240
-    strategy:
-      fail-fast: false
-      matrix:
-        image: [agent, exec, egress]
-    steps:
-      - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Free runner disk
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          docker system prune -af
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Build ${{ matrix.image }} image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: ./container
-          file: ./container/Dockerfile
-          target: ${{ matrix.image }}
-          push: false
-          load: false
-          outputs: type=cacheonly
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+        run: python -m compileall -q -f build_desk tests tools static-inspection

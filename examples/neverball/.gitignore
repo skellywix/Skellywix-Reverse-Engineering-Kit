@@ -1,0 +1,5 @@
+target/
+# The licensed game data is read from outside the repository and never committed.
+/data/
+*.sol
+*.pk3

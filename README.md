@@ -1,241 +1,101 @@
-# Autonomous reverse-engineering container
+# Skellywix RE Kit
 
-A container stack for static analysis and controlled dynamic execution of untrusted binaries. A trusted Docker host admits jobs, verifies immutable inputs, launches a fresh analysis agent, brokers isolated execution requests, and publishes bounded reports. The images were built on a separate Docker host and qualified on a Docker host with `runsc`.
+**BUILD** compiles the Neverball 1.6.0 Rust port for Windows. The download stays locked until an independent Windows comparison qualifies the package. **INSPECT** identifies a file, compares two files, or checks a SHA-256 digest without running either file.
 
 This project processes hostile input. Read [SECURITY.md](SECURITY.md) and [the design](docs/design.md) before deployment.
 
-For an interactive workbench that never runs specimens, open the **[Skellywix RE Kit: Bitrot Den](static-inspection/README.md)**. It starts independently of the container stack and needs no model credentials for file identification, build comparison, or checksum verification.
+## Purpose
 
-## Components
+Skellywix RE Kit targets security research, cheat detection, defensive engineering, game preservation, and reverse-engineering education. These are product domains, not a claim that the current release accepts every binary or engine.
+
+- The current release provides passive file metadata and a source-based Windows game port.
+- Anti-cheat teams can use its passive evidence and bounded rebuild proof; it does not generate bypasses, attach to games, or modify memory.
+- BUILD accepts only the original Neverball Windows ZIP. It is not a general-purpose binary runner.
+- PE, ELF, IL2CPP, Unreal Engine 4, and Source 2 are intended curriculum and future passive-profile topics. The current inspector recognizes PE and ELF structure but has no engine-specific profile.
+- Preservation groups can retain metadata and verified packages for supported profiles; arbitrary game ecosystems are not reconstructed.
+
+Use the Kit only on files and systems you own or are authorized to analyze.
+
+**Open the paired workspace:** [SKELLYWIX RE KIT](http://127.0.0.1:48784/). This is a private loopback address, not a hosted demo. Choose **INSPECT** for the file tools or **BUILD** for runs. The old inspection bookmark leads back to the same home. For a file-only installation, use the [standalone inspector](static-inspection/README.md); it needs no model credentials.
+
+## Windows game profile: Neverball 1.6.0
+
+The [Rust port](examples/neverball/) includes the simulation and desktop source, not the original executable or game data. See [NOTICE.md](examples/neverball/NOTICE.md) for the license and third-party notices.
+
+1. On a Linux host, prepare the [release layout](build_desk/game_jobs.py): the source tree, vendored dependencies, original Windows ZIP, and SHA-256 manifest. Preload the pinned compiler image.
+2. From the checkout, run `python3 -B -m build_desk.desk "$ROOT" --game-release "$RELEASE"`. Use an absolute, operator-owned, mode-0700 state directory for `ROOT` and the absolute staged release directory for `RELEASE`. The desk creates `$ROOT/desk.sock` and keeps game runs in `$ROOT/games`. It needs no model or account.
+3. Forward `127.0.0.1:48784` over SSH to the private `desk.sock` and open the workspace link above. Forward only to loopback. Anyone who can reach that forward can operate the desk.
+4. Choose the original Windows ZIP and select **Rebuild for Windows**. The address bar records the run ID. Reopen that address to see the same run without starting another one.
+
+Compilation alone doesn’t enable **Download for Windows**. The operator must supply independent Windows observations for the original and the candidate, bound to that run and package. The game requires working OpenGL. Joystick input, title demos, and the full original options menu aren’t implemented.
+
+## Active components
 
 | Path | Role |
 |---|---|
-| `container/Dockerfile` | Multi-stage `agent`, `exec`, and `egress` images. |
-| `container/compose.yaml` | Build definitions and the long-running egress proxy. |
-| `container/re-dispatcher.py` | Trusted host service for admission, startup cleanup, isolation, execution containment, limits, and publication. |
-| `container/runner.py` | Single-job agent entry point. |
-| `container/executor.py` | Closed-schema broker for fresh networkless execution containers. |
-| `container/re_submit.py` | Hashes and atomically uploads a job over SSH. |
-| `container/re_fetch.py` | Retrieves a completed report over SSH. |
-| `container/egress-allowlist` | Deny-first Squid policy for named model endpoints. |
-| `container/omp-profile/` | Self-contained OMP profile with REA as its only MCP server. |
+| [`build_desk/`](build_desk/) | Game build UI, upload checks, offline compilation, run journal, and Windows qualification checks. |
+| [`static-inspection/`](static-inspection/) | Passive file identification, build comparison, and digest checking. |
+| [`examples/neverball/`](examples/neverball/) | GPL-licensed Rust simulation, desktop game, build recipe, and tests for Neverball 1.6.0. |
+| [`tools/dependency_candidates.py`](tools/dependency_candidates.py) | Records dependency candidates for review without installing them into the product. |
+| [`tests/`](tests/) | Build, package, qualification, HTTP, and dependency checks. |
 
-The images include OMP, REA, Ghidra, JADX, radare2, Binwalk, Unblob, capa, YARA-X, Detect It Easy, WABT, wasm-tools, Binaryen, Wasmtime, TShark, Zeek, Scapy, Frida, and qemu-user in the execution image.
+The general-purpose job dispatcher, arbitrary-job submission helpers, and execution broker are no longer shipped.
 
-At startup, the dispatcher removes all stale containers carrying its role label, verifies they
-are absent, sweeps executor scratch, and only then recovers interrupted jobs or scans the
-inbox. Per-job agent and execution containers disable Docker logging. Execution requests are
-cancelled and contained when the agent exits; containment requires kill, forced removal, and
-an inspect result proving the exact container is absent.
+## Operating boundary
+
+- **INSPECT** reads local bytes and never executes a file.
+- **BUILD** accepts the exact Neverball Windows ZIP and one fixed request. It compiles operator-staged Rust source offline and never executes the upload.
+- The optional INSPECT integrations are metadata-only: the operator-approved critic receives bounded labels and counts in one stateless call; a case-scoped key exposes four read-only tools and cannot load files or run programs.
+
+Verification covers the named profiles and scenarios, not arbitrary executables, game engines, or complete gameplay parity.
+
+## Assessed Decompile inventory
+
+On 2026-11-24, the upstream `1llu50ry/Decompile` release `v0.0.1` (`a7b4baed…`) and then-current `main` (`e40f12bd…`) were inspected as untrusted source and data. Nothing from the project was installed, executed, registered, or loaded into a model. Its headline numbers are inventory counts, not proof that every entry is implemented, safe, or interoperable.
+
+| Upstream area | Source-observed inventory | Skellywix disposition |
+|---|---|---|
+| Release, CLI, server, and setup | 39 release assets include 16 platform archives. Setup names 42 client slugs, writes only the selected clients, and defaults a non-interactive run to `claude_code`. Plugin manifests launch unpinned `decompile@latest`. | Documented only. No upstream installer, archive, CLI, server, client registration, or automatic update path is active. |
+| MCP tools | 315 `server.tool(` call sites and 313 distinct literal tool names. HTTP authentication is optional, and the filesystem policy is open when `MCP_FS_ALLOW` is unset. | No runtime import. Passive parser behavior may be used only as a specification for independently implemented, bounded file analysis. |
+| RE and debug backends | 66 catalog rows; 32 are explicitly phantom because no MCP server is published. Several remaining entries are placeholders, unrelated packages, or live-debug adapters. The tool bundle downloads latest or unpinned dependencies, writes `env.json`, and prepends paths to `PATH`. | Excluded as a bundle and as model-callable adapters. An offline analyzer needs its own source review, license check, immutable pin, fixed command, and resource boundary before admission. |
+| Host bridges | Nine plugin directories: Ghidra, IDA Pro, Binary Ninja, Cheat Engine, dnSpy, ILSpy, ReClass.NET, x64dbg, and Frida. The listeners have no authentication and allow cross-origin requests. The Cheat Engine bridge decodes every request body with `loadstring`. | Excluded. The Kit exposes no bridge listener, process attach, debugger control, memory write, script execution, or host-database write-back. A future adapter may only ingest a human-created, offline JSON export and emit an inert annotation sidecar. |
+| Native emulation | `emu_run`, `emu_decrypt_xor`, and `emu_arm64_run` are bounded interpreters over caller-supplied decoded instructions, not general byte decoders or Unicorn-compatible emulators. Their correctness suite was not run during the assessment. | Candidate for independent offline implementation and dedicated tests; no upstream emulator code is active. |
+| Skills, agents, subagents, plugins, and prompts | The database contains 6,088 skills, 194 agents, 163 subagents, 193 Markdown plugin records, and 3,349 prompts. Its metadata says `with_source=no`; thousands of records have scrubbed or missing origin and license data. | Catalogued, not imported. Executable agent, subagent, plugin, and prompt definitions stay out. Only passive, license-verified, provenance-complete reference text can enter a future default-deny review. |
+| Agent mesh and runtime harness | The upstream catalog includes mesh tools and program execution capabilities. | Excluded. The Kit exposes neither an agent mesh nor a general-purpose execution service. |
+
+Safe candidates are independently implemented offline parsers for formats such as PE, ELF, Mach-O, DEX, WASM, ZIP/APK, and .NET; bounded entropy, string, hash, PDB/DWARF, packet-capture, and YARA analysis; bounded operand interpretation; human-created read-only exports; and license-verified inert reference material. Live attach, spawn, injection, memory editing, breakpoint control, arbitrary scripts, network interception, exploit or payload helpers, unpinned installation, mesh, hub, and model-supplied code execution remain outside the product.
 
 ## Requirements
 
-The Docker host needs:
+- Linux Docker host with the `runsc` runtime registered.
+- Python 3.12 or newer.
+- The pinned offline compiler image identified in [`build_desk/game_jobs.py`](build_desk/game_jobs.py), provisioned separately.
 
-- Linux with Docker Engine and Compose
-- gVisor registered as the `runsc` runtime
-- Python 3.12 or newer
-- systemd for the supplied dispatcher unit
-- a dedicated, size-bounded filesystem mounted at `/srv/re-lab`
+The standalone file inspector has its own launcher and requirements in [`static-inspection/README.md`](static-inspection/README.md).
 
-The sample identity is uid/gid 10001 and group `relab`. The Docker host operator must create the storage, group, inbox permissions, model environment file, and trusted service configuration for the local environment.
+## Checks
 
-Create the bounded filesystem on the Docker host before starting the dispatcher. Verify that
-`/etc/fstab` has no existing `/srv/re-lab` entry before appending this example:
+Run the bounded profile contracts from the repository root:
 
-```bash
-install -d -o root -g root -m 0755 /srv/re-lab
-truncate -s 40G /var/lib/re-lab.img
-mkfs.ext4 -F -N 1000000 /var/lib/re-lab.img
-printf '%s\n' '/var/lib/re-lab.img /srv/re-lab ext4 loop,nodev,nosuid,nofail 0 2' >> /etc/fstab
-systemctl daemon-reload
-mount /srv/re-lab
-findmnt --verify
+```sh
+sudo python3 -IB -m unittest discover -s tests -t . -v
 ```
 
-The explicit inode count bounds entry floods. `RequiresMountsFor=/srv/re-lab` prevents the
-dispatcher from using the bare directory if the mount is absent.
+Run the passive inspector contracts from its directory:
 
-The image is a sparse file on the host root filesystem, so written blocks consume host root
-space up to 40 GiB. Keep that much space free there, and run `fstrim /srv/re-lab` or the
-distribution's `fstrim.timer` after jobs are deleted to return unused blocks.
-
-## Build and install
-
-Build all three images, provide an upstream resolver file, and start only the egress proxy.
-The build automatically checks for a stable REA release and updates the local REA pins before
-building. Use `sh container/build.sh --pinned` to build exactly what's in `container/Dockerfile`
-without checking for a newer REA release.
-
-```bash
-sh container/build.sh
-AGENT_IMAGE=$(docker image inspect --format '{{.Id}}' re-lab-agent:local)
-EXEC_IMAGE=$(docker image inspect --format '{{.Id}}' re-lab-exec:local)
-install -d -m 0700 /etc/re-lab
-install -m 0644 /path/to/upstream-resolv.conf /etc/re-lab/egress-resolv.conf
-docker compose -f container/compose.yaml up -d re-egress
+```sh
+cd static-inspection
+python3 -IB -m unittest discover -s tests -v
 ```
 
-Use a resolver file that lists reachable upstream nameservers, not a host loopback stub.
+Both suites target Linux because they exercise Unix sockets and Linux file-descriptor controls; the root suite is not a Windows compatibility check.
 
-Install the trusted host files:
+The inspector README lists its browser regression. See the [Neverball README](examples/neverball/README.md) for simulation and desktop checks.
 
-```bash
-install -d /opt/re-lab /etc/re-lab
-install -m 0644 container/executor.py /opt/re-lab/executor.py
-install -m 0644 container/re-dispatcher.py /opt/re-lab/re-dispatcher.py
-install -m 0644 container/re-dispatcher.service /etc/systemd/system/re-dispatcher.service
-printf '{"agent_image":"%s","exec_image":"%s"}\n' "$AGENT_IMAGE" "$EXEC_IMAGE" > /etc/re-lab/dispatcher.json
-chmod 0600 /etc/re-lab/dispatcher.json
-systemctl daemon-reload
-systemctl enable --now re-dispatcher.service
-```
+## Dependency review
 
-`report_gid` defaults to `10001` (`relab`) and may be overridden in `dispatcher.json` with an
-integer group id. Published directories are mode `0750`; files are mode `0640`.
+The weekly **Dependency candidates** workflow downloads candidate bytes on a disposable GitHub runner, records versions and SHA-256 digests, and retains only the receipt. It does not run candidate programs, push pin changes, publish images, or deploy.
 
-Create `/srv/re-lab/secrets/models.env` as `root:root` mode `0600`. The dispatcher passes it only to the per-job agent container. Never add credentials to an image, Compose file, repository, or CI secret.
+`tools/dependency_candidates.py::REA_BASELINE_VERSION` is the explicit reviewed REA promotion baseline. A promotion must update that constant in the same reviewed change; the candidate job does not infer promotion from an untrusted staged receipt.
 
-Before accepting untrusted work, verify that `docker info` lists `runsc`, both configured
-images are content-addressed, the agent reaches only the intended model endpoints, execution
-containers have no network, and the agent sees only the active job's mounts. From an agent
-container, also verify that direct connections to the isolated internal bridge gateway fail.
-
-### Running under gVisor
-
-gVisor cannot use Docker's embedded DNS on this user-defined network. The egress proxy mounts
-the operator-supplied upstream resolver file, while each agent receives an `/etc/hosts` entry
-for the proxy through `--add-host`. The internal network is fixed at `172.30.97.0/24`, with the
-proxy at `172.30.97.2`; if that subnet conflicts with another Docker network, change both the
-Compose subnet/address and `EGRESS_IP` in `re-dispatcher.py`.
-
-The agent home is a `noexec` tmpfs. The image build therefore extracts OMP's native addon and
-installs it beside the OMP binary, where the native loader can map it without weakening the
-home mount. The egress proxy starts as its unprivileged user with no added capabilities.
-
-### Qualification limits
-
-Qualification covered one runtime host: an egress probe from an agent container reached only
-the five allowlisted model and sign-in hosts, a fill of the lab filesystem stopped at its
-40 GiB boundary, and two benign smoke jobs—one static and one through the executor—published
-reports end to end.
-Another runtime host needs the same checks, starting with the resolver file and internal subnet.
-
-## Submit and fetch
-
-Both helpers require an SSH target. Supply it explicitly or through `RE_LAB_HOST`; there is no default.
-
-```bash
-export RE_LAB_HOST=docker-host
-python container/re_submit.py ./target "Explain this binary" \
-  --executable bin/tool --executable scripts/run --max-cost 5
-python container/re_fetch.py <job-id> --dest ./reports
-```
-
-Repeat `--executable REL` for each target-relative file that must be staged as mode `0755`.
-Existing execute bits are preserved, and SCP preserves staged modes. `--host` overrides
-`RE_LAB_HOST`. If neither is set, the helper fails before invoking SSH or SCP.
-
-## Tests
-
-```bash
-python -m unittest discover -s tests -t .
-```
-
-Run the suite as root on Linux to exercise uid, ownership, `openat`, `O_NOFOLLOW`, and symlink boundaries. Windows runs the portable contract tests and skips POSIX-only cases.
-
-## CI
-
-CI runs on Ubuntu 24.04 with read-only repository permissions:
-
-1. `unit` runs the full suite as root with Python 3.12.
-2. `lint` runs Hadolint, validates the Compose model, and byte-compiles every Python file.
-3. `image` runs only after unit and lint pass. A matrix builds the `agent`, `exec`, and `egress` targets independently with no push or loaded image and with isolated GitHub Actions caches.
-
-The image job proves that every pinned download URL, SHA-256 check, build stage, and `COPY` path resolves. It does not prove gVisor runtime behavior or the end-to-end job lifecycle on a configured Docker host.
-
-## Supply-chain pins
-
-The base images are digest-pinned, apt uses the dated Ubuntu snapshot `20261118T000000Z`, Python packages are hash-locked in `container/requirements.lock`, and every downloaded artifact is verified before extraction. Exact public URLs and SHA-256 values are in `container/Dockerfile`.
-
-| Artifact | Version | SHA-256 |
-|---|---|---|
-| Ubuntu image index | 24.04 | `ab18ecc70c55c703eae968948f9f1dbbe662aa8d9badac7c982e6a6237b9d74c` |
-| Rust image index | 1.100.0-bookworm | `ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea` |
-| OMP | 19.0.1 | `6ceef04430851bb1050c6fda3af467412eb44a11df0a6ff8121fe601013c5415` |
-| Node.js | 22.23.5 | `cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8` |
-| REA source archive (includes the lockfile and skill source) | See `container/Dockerfile` | See `container/Dockerfile` |
-| Temurin JDK | 25.0.5.1+2 | `760f91b22c3efc9bd1b64ff950598231be82928cc807e30691a0e7a2995a62c0` |
-| Ghidra | 12.2 | `2c2cd776db3c1f6a097ba418922378ac3649cadd5e844a6f5f088ae628a7be67` |
-| JADX | 1.5.7 | `1755e4242ade71a077438723689f404079592ec7764a3a0572f98fef94ebcbf3` |
-| Zeek | 9.0.1 | `fbee2eb5ee6ebd64ef0db830fbb9fa1d702d58807643c719e8338a59329197f2` |
-| radare2 | 6.2.6 | `0dddf90e217e38a6a658881b9ec7e217198487c75b7f82a332b3cbd30834636f` |
-| Binwalk | 3.1.0 | `99d5dc70f5021c55624f098adae4d1de9c1c07d000475664704b675aad7e0811` |
-| capa | 10.0.0 | `96cb5115f495024a478b0e9f9f77f9027058155589235fbd4c50e7382055fcca` |
-| YARA-X | 1.23.0 | `da0c17f23fc743dcd44ad6d3135c906a4c0d197685b661c4cdc923c2f8967a64` |
-| Detect It Easy | 3.21 | `96e8e82e822e3ca8a829536312b92e8b241147fe38c8ab29c9dbfc1ab21aa25d` |
-| WABT | 1.0.42 | `84895407a6bbb80e918f33b16b2fb2206021c150b6bc9ff6f761263a745ab131` |
-| wasm-tools | 1.263.0 | `21c036c1740a0552124c79c6e2170cb61c5b016005671a6d5bc06cf642165431` |
-| Binaryen | 133 | `2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489` |
-| Wasmtime | 50.0.3 | `c59133a9334e96eaca5e26f0d4c35199bfe43ab34049aa254ef4b47af1361476` |
-
-### REA updates
-
-`sh container/build.sh` resolves the latest stable release from
-[the official REA GitHub repository](https://github.com/morluto/rea/releases). It fetches
-the source archive by commit, checks the manifest, matching lockfile, and skill source,
-then updates the version, commit, and SHA-256 together in `container/Dockerfile`.
-A failed check stops the build without changing the pin. To update it without building,
-run `python3 tools/dependency_candidates.py --apply-rea`.
-
-The image builds REA from that archive and generates the complete REA skill directory,
-including its references, from the same source. It installs dependencies from the
-upstream lockfile without running dependency install scripts. A skill-only change
-ships automatically with the next stable GitHub release. The build doesn't download
-the published `rea-agents` package from npm.
-
-The updater doesn't switch the dispatcher's image IDs or restart any service. Verify new images
-before promoting them, and keep the old IDs for rollback. To rebuild an older revision without
-selecting the latest REA release again, use `sh container/build.sh --pinned`.
-
-REA 6.10 changes the Evidence format. Recreate older Evidence, bundles, and snapshots before
-comparing them with new output. See the
-[upstream migration notes](https://github.com/morluto/rea/releases/tag/rea-agents-6.10.1).
-
-### Dependency candidates
-
-The **Dependency candidates** GitHub Actions workflow runs weekly or on demand.
-Download its `dependency-candidates` receipt to see candidate versions, hashes,
-and checks that failed. The job downloads the candidate bytes on a disposable
-runner, but retains only the receipt. It doesn't run candidate programs, push
-pin changes, publish images, or deploy.
-
-- The REA receipt records the source commit and the archive, lockfile, and skill source
-  hashes. The workflow doesn't apply the update.
-- Native release assets, the Binwalk crate, and Node LTS stay in the existing
-  platform and release lanes. Use the release receipt to review URL and digest
-  changes along with any version-specific build paths.
-- Review the Python wheel set together against `container/requirements.lock`.
-  A workbench UI candidate includes its new manifest and npm lock; rebuild the
-  checked-in UI and check its third-party notices in the same pull request.
-- Image candidates retain the supported platform. An Ubuntu snapshot candidate
-  uses signed archive metadata; the build verifies and resolves the actual
-  packages. Review Actions updates as commit pins, not floating tags.
-
-Keep the prior deployed image digest until the new build passes checks, including
-the applicable local analysis or workbench smoke tests. Revert the reviewed
-dependency commit if the pins need to be rolled back.
-
-## Accepted risks
-
-- **Key exposure — accepted risk.** Model keys exist inside each per-job agent container.
-- **Cost-cap bypass — accepted risk.** The native `$20` maximum is effective only while the
-  agent is uncompromised.
-- **Report disclosure — accepted risk.** Exact-value redaction is not robust against encoded,
-  split, transformed, encrypted, or indirect secret disclosure in report output.
-- **Isolation escape — accepted risk.** gVisor reduces kernel attack surface but is not a
-  virtual-machine boundary.
-- **Allowed-endpoint exfiltration — accepted risk.** Allowed model endpoints can carry target
-  data.
-
-See [SECURITY.md](SECURITY.md) for the full threat model and vulnerability reporting process.
+See [SECURITY.md](SECURITY.md) for the trust boundary and [the design](docs/design.md) for the current architecture.

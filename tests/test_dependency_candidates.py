@@ -35,8 +35,7 @@ class ReaCandidateTests(unittest.TestCase):
         self.skill = b"# Example skill\n"
         self.entry = b"throw new Error('staging must not execute JS');\n"
 
-    def stage(self, *, omit_skill=False, prerelease=False, dockerfile=None,
-              extra_member=None, version=None):
+    def stage(self, *, omit_skill=False, prerelease=False, extra_member=None, version=None):
         blob = io.BytesIO()
         root = "rea-" + self.commit
         manifest = self.manifest | {"version": version or self.version}
@@ -72,10 +71,7 @@ class ReaCandidateTests(unittest.TestCase):
             return hashlib.sha256(responses[url]).hexdigest()
 
         with TemporaryDirectory() as scratch:
-            if dockerfile is None:
-                result = updater.stage_rea(Path(scratch), (6, 8, 0), fetch=fetch)
-            else:
-                result = updater.update_rea(Path(scratch), dockerfile, fetch=fetch)
+            result = updater.stage_rea(Path(scratch), (6, 8, 0), fetch=fetch)
         return result, hashlib.sha256(source).hexdigest(), hashlib.sha256(members["package-lock.json"]).hexdigest()
 
     def test_receipt_links_one_github_archive_to_lock_and_skill(self):
@@ -108,56 +104,15 @@ class ReaCandidateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "stable GitHub release"):
             self.stage(prerelease=True)
 
-    def test_update_changes_source_version_and_digest_and_is_idempotent(self):
-        with TemporaryDirectory() as directory:
-            dockerfile = Path(directory) / "Dockerfile"
-            before = self.dockerfile()
-            dockerfile.write_bytes(before.encode())
-            _, source_hash, _ = self.stage(dockerfile=dockerfile)
-            expected = (before.replace("6.8.0", self.version)
-                        .replace("b" * 40, self.commit)
-                        .replace("c" * 64, source_hash))
-            self.assertEqual(dockerfile.read_bytes(), expected.encode())
-            result, _, _ = self.stage(dockerfile=dockerfile)
-            self.assertIsNone(result)
-            self.assertEqual(dockerfile.read_bytes(), expected.encode())
+class ActiveSourceTests(unittest.TestCase):
+    def test_catalog_uses_only_active_product_inputs(self):
+        names = {name for name, _stage, _inputs in updater.sources()}
 
-    def test_failed_update_leaves_original_pins(self):
-        for failure, message in (
-            ({"version": "6.8.0"}, "manifest"),
-            ({"extra_member": "npm-shrinkwrap.json"}, "unsafe"),
-            ({"extra_member": "../../escape"}, "unsafe"),
-        ):
-            with self.subTest(failure=failure), TemporaryDirectory() as directory:
-                dockerfile = Path(directory) / "Dockerfile"
-                before = self.dockerfile()
-                dockerfile.write_bytes(before.encode())
-                with self.assertRaisesRegex(ValueError, message):
-                    self.stage(dockerfile=dockerfile, **failure)
-                self.assertEqual(dockerfile.read_bytes(), before.encode())
-
-    @staticmethod
-    def dockerfile():
-        return "\r\n".join((
-            "# unrelated",
-            "# REA source release 6.8.0",
-            "RUN fetch-verified https://codeload.github.com/morluto/rea/tar.gz/" + "b" * 40 + " \\",
-            "      " + "c" * 64 + " /tmp/rea-source.tgz \\",
-            " && mkdir /opt/rea \\",
-            "",
-        ))
-
-
-class ReleaseCandidateTests(unittest.TestCase):
-    def test_only_matching_newer_stable_asset_is_eligible(self):
-        def release(tag, asset, *, prerelease=False):
-            return {"tag_name": tag, "prerelease": prerelease, "assets": [{"name": asset}]}
-
-        selected = updater.match_release(
-            [release("v2.0.0", "tool-2.0.0-linux-amd64.tar.gz"),
-             release("v1.4.0", "tool-1.4.0-linux-arm64.tar.gz"),
-             release("v1.3.0", "tool-1.3.0-linux-amd64.tar.gz", prerelease=True),
-             release("v1.2.0", "tool-1.2.0-linux-amd64.tar.gz")],
-            r"v(\d+\.\d+\.\d+)", "tool-{version}-linux-amd64.tar.gz", (1, 1, 0), major=1,
-        )
-        self.assertEqual(selected, ("1.2.0", "v1.2.0", {"name": "tool-1.2.0-linux-amd64.tar.gz"}))
+        self.assertTrue({"rea-agents", "workbench-ui", "python:3.13-alpine"} <= names)
+        self.assertTrue(any(name.startswith("action:actions/checkout@") for name in names))
+        self.assertTrue(any(name.startswith("action:actions/setup-python@") for name in names))
+        self.assertTrue(any(name.startswith("action:actions/upload-artifact@") for name in names))
+        self.assertFalse({
+            "binwalk", "node", "python-tools", "ubuntu-snapshot",
+            "NationalSecurityAgency/ghidra", "radareorg/radare2",
+        } & names)

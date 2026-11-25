@@ -49,10 +49,11 @@ module.exports = checkCare;
 if (require.main === module) {
   const { chromium } = require('playwright');
   (async () => {
-    const browser = await chromium.launch();
+    const browser = await chromium.launch({ channel: 'chromium' });
     try {
       const page = await browser.newPage({ viewport: { width: 1320, height: 900 }, reducedMotion: 'reduce' });
-      await page.goto('http://127.0.0.1:48730/'); await page.locator('footer small').waitFor();
+      await page.goto(process.env.DESK_URL || 'http://127.0.0.1:48730/index.html');
+      await page.locator('footer small').waitFor();
       await checkCare(page); console.log('PASS: floating Skelly, keyboard, drag, care, and unchanged desk.');
     } finally { await browser.close(); }
   })().catch(error => { console.error(error); process.exitCode = 1; });

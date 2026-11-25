@@ -1,0 +1,245 @@
+:root {
+  color-scheme: light;
+  --canvas: #f4f5ef;
+  --surface: #fcfdf8;
+  --line: #c2cec8;
+  --control: #71857e;
+  --ink: #182c2c;
+  --muted: #48605d;
+  --accent: #006368;
+  --error: #a3313e;
+  font: 100%/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--canvas);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body,
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.skip {
+  position: absolute;
+  left: 1rem;
+  top: -5rem;
+  padding: .5rem;
+  background: var(--surface);
+}
+
+.skip:focus {
+  top: .5rem;
+  z-index: 1;
+}
+
+header {
+  border-top: 3px solid var(--accent);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.bar,
+main {
+  width: min(100%, 82rem);
+  margin: auto;
+  padding-inline: clamp(.8rem, 3vw, 2rem);
+}
+
+.bar,
+nav,
+h1,
+.result-head {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+}
+
+.bar,
+.result-head {
+  justify-content: space-between;
+}
+
+.bar {
+  flex-wrap: wrap;
+  padding-block: .7rem;
+}
+
+h1 {
+  font-size: 1.05rem;
+}
+
+.mark {
+  padding: .15rem .4rem;
+  background: var(--ink);
+  color: var(--surface);
+  font: bold .85rem/1.6 ui-monospace, monospace;
+}
+
+nav {
+  gap: .3rem;
+}
+
+nav a {
+  padding: .4rem .65rem;
+  color: var(--muted);
+  font-size: .85rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+nav [aria-current] {
+  color: var(--ink);
+  border-bottom: 2px solid var(--accent);
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+main {
+  padding-block: clamp(1.25rem, 3vw, 2.5rem);
+}
+
+.intro {
+  max-width: 68ch;
+  margin-bottom: 1.25rem;
+}
+
+.kicker {
+  color: var(--accent);
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+h2 {
+  margin-block: .2rem .4rem;
+  font-size: clamp(1.7rem, 3vw, 2.4rem);
+  line-height: 1.15;
+}
+
+h3 {
+  font-size: 1.1rem;
+}
+
+.panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+form,
+section {
+  min-width: 0;
+  padding: clamp(.85rem, 2vw, 1.35rem);
+  border: 1px solid var(--line);
+  border-radius: .25rem;
+  background: var(--surface);
+}
+
+label,
+input,
+small {
+  display: block;
+}
+
+label {
+  margin-block: .9rem .25rem;
+  font-weight: 600;
+}
+
+input {
+  width: 100%;
+  min-width: 0;
+  padding: .4rem;
+  border: 1px solid var(--control);
+  border-radius: .2rem;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+small {
+  margin-top: .25rem;
+  color: var(--muted);
+}
+
+button,
+.primary {
+  padding: .5rem .85rem;
+  border: 1px solid var(--control);
+  border-radius: .2rem;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary {
+  display: inline-block;
+  margin-top: 1rem;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+  text-decoration: none;
+}
+
+button:disabled {
+  border-color: var(--line);
+  background: var(--canvas);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+#game-status,
+#game-error:not(:empty),
+#game-receipt:not(:empty) {
+  margin-top: .8rem;
+}
+
+#game-error {
+  color: var(--error);
+}
+
+#game-events {
+  margin: .65rem 0 0;
+  padding-left: 1.5rem;
+}
+
+#game-events:empty {
+  display: none;
+}
+
+#game-events li,
+#game-receipt,
+#game-error {
+  overflow-wrap: anywhere;
+}
+
+#game-receipt {
+  color: var(--muted);
+  font: .84rem/1.5 ui-monospace, monospace;
+}
+
+@media (max-width: 46rem) {
+  .panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -15,14 +15,14 @@ export default function CaseReview({ advisor, disabled, loaded, start, cancel, r
   const note = advisor.critique;
   const pending = ['pending', 'reviewing'].includes(note.status);
   return <div className="case-review">
-    <details><summary>Run the folio with Skellywix</summary>
-      <p>One pass, no reruns: identify each specimen, diff the pair, and check A’s hash if you supply a reference.</p>
+    <details><summary>Run the case with Skellywix</summary>
+      <p>One pass, no reruns: identify each file, diff the pair, and check A’s hash if you supply a reference.</p>
       <label>Reference SHA-256 for A (optional)<input type="text" value={reference} onChange={e => setReference(e.target.value)} autoComplete="off" spellCheck={false} aria-invalid={!valid} /></label>
       {!valid && <p>Enter 64 hexadecimal characters or leave the reference blank.</p>}
       <label><input type="checkbox" checked={withCritic} onChange={e => setWithCritic(e.target.checked)} /> Request a model critique</label>
       {withCritic && <><p>Your OMP model receives check names, actors, slot letters, outcomes, and counts. No files, paths, hashes, or keys are sent.</p>
-        <details className="critic-setup"><summary>Connect the critic</summary><p>From the kit directory in OMP, load the adapter in Python Eval:</p><pre>%load workbench/omp_critic.py</pre><p>Select <strong>Start folio review</strong>. While the request is pending, run this in a second Eval cell:</p><pre>{`review_next(completion, port=${Number(location.port || 80)})`}</pre><p>The request expires in two minutes. Each call handles one note; start a new review before connecting again.</p></details></>}
-      <button disabled={disabled || !loaded || !valid || pending} onClick={() => start(digest || null, withCritic)}>Start folio review</button>
+        <details className="critic-setup"><summary>Connect the critic</summary><p>From the kit directory in OMP, load the adapter in Python Eval:</p><pre>%load workbench/omp_critic.py</pre><p>Select <strong>Start case review</strong>. While the request is pending, run this in a second Eval cell:</p><pre>{`review_next(completion, port=${Number(location.port || 80)})`}</pre><p>The request expires in two minutes. Each call handles one note; start a new review before connecting again.</p></details></>}
+      <button disabled={disabled || !loaded || !valid || pending} onClick={() => start(digest || null, withCritic)}>Start case review</button>
     </details>
     {note.status !== 'idle' && <div className="review-receipt" role="status">
       {advisor.skipped.length > 0 && <p>Last pass skipped: {advisor.skipped.map(k => k === 'compare_builds' ? 'comparison (no B)' : 'checksum (no reference)').join('; ')}.</p>}

@@ -3,8 +3,10 @@ import http.client
 import json
 import socket
 import socketserver
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import ExitStack
 from functools import partial
@@ -26,6 +28,47 @@ class SocketClient(http.client.HTTPConnection):
         self.sock.settimeout(3)
         self.sock.connect(self.path)
 
+
+
+@unittest.skipUnless(hasattr(socketserver, 'UnixStreamServer'), 'requires Unix sockets')
+class WorkspaceNavigationTests(unittest.TestCase):
+    def test_standalone_and_paired_operator_addresses(self):
+        workbench = Path(__file__).resolve().parents[1] / 'workbench'
+        for paired in (False, True):
+            with self.subTest(paired=paired), tempfile.TemporaryDirectory() as tmp:
+                desk = str(Path(tmp) / 'desk.sock')
+                args = [sys.executable, '-IB', str(workbench / 'server.py'), '--ipc', tmp,
+                        '--web', str(workbench / 'ui' / 'dist')]
+                if paired:
+                    args.append('--paired')
+                with subprocess.Popen(args, stderr=subprocess.PIPE) as proc:
+                    try:
+                        deadline = time.monotonic() + 5
+                        while not Path(desk).is_socket():
+                            if proc.poll() is not None:
+                                self.fail(proc.stderr.read().decode())
+                            self.assertLess(time.monotonic(), deadline, 'desk socket did not appear')
+                            time.sleep(.01)
+
+                        def fetch(method, target, **headers):
+                            conn = SocketClient(desk)
+                            try:
+                                conn.request(method, target, headers=headers)
+                                res = conn.getresponse()
+                                return res.status, res.getheader('Location'), res.read()
+                            finally:
+                                conn.close()
+
+                        for method in ('GET', 'HEAD'):
+                            status, location, _ = fetch(method, '/')
+                            self.assertEqual((status, location), (302, 'http://127.0.0.1:48784/') if paired else (200, None))
+                        status, location, page = fetch('GET', '/index.html')
+                        self.assertEqual((status, location), (200, None))
+                        self.assertEqual(b'<meta name="skellywix-workspace" content="paired">' in page, paired)
+                        self.assertEqual(fetch('GET', '/', Host='wrong.example')[:2], (403, None))
+                        self.assertEqual(fetch('GET', '/api/state', Origin='http://127.0.0.1:48784')[:2], (403, None))
+                    finally:
+                        proc.terminate()
 
 @unittest.skipUnless(hasattr(socketserver, 'UnixStreamServer'), 'requires Unix sockets')
 class TransportTests(unittest.TestCase):
