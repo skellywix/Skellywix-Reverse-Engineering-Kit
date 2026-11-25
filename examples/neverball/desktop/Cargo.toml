@@ -1,0 +1,22 @@
+[package]
+name = "neverball-desktop"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "GPL-2.0-or-later"
+publish = false
+
+[[bin]]
+name = "neverball"
+path = "src/main.rs"
+
+[dependencies]
+neverball = { path = ".." }
+macroquad = { version = "=0.4.16", features = ["audio"] }
+# The release uses JPEG for previews and environment textures, PNG for transparency.
+image = { version = "=0.24.9", default-features = false, features = ["jpeg", "png"] }
+# Read the original PK3 directly. No extraction, encryption, or network backend.
+zip = { version = "=9.8.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[lints.rust]
+unsafe_code = "forbid"

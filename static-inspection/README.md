@@ -1,6 +1,6 @@
 # Skellywix RE Kit
 
-Skellywix RE Kit inspects local files without running them. The standalone inspector prints the byte count, SHA-256, and a signature label as one JSON record. It recognizes a few common byte prefixes; it does not parse, extract, disassemble, or assess the safety of a file.
+File inspection is the part of Skellywix RE Kit that examines files without running them. The standalone inspector prints the byte count, SHA-256, and a signature label as one JSON record. It recognizes a few common byte prefixes; it does not parse, extract, disassemble, or assess the safety of a file.
 
 ## Start the local desk
 
@@ -10,7 +10,7 @@ On your own **single-user Linux workstation**, use a non-root account with acces
 bash static-inspection/start.sh
 ```
 
-Open the loopback URL the launcher prints. Try two ordinary text files in **Build diff**. The UI is prebuilt; you don’t need Node.js, an SSH server, a model, or an API key. The first launch downloads the pinned worker image if missing. Later launches can run offline. Press Control-C to stop the desk and discard the case. To use another pair of adjacent local ports, pass the first port, for example `bash static-inspection/start.sh 48900`.
+Open the loopback URL the launcher prints. Try two ordinary text files in **COMPARE**. The UI is prebuilt; you don’t need Node.js, an SSH server, a model, or an API key. The first launch downloads the pinned worker image if missing. Later launches can run offline. Press Control-C to stop the desk and discard the case. To use another pair of adjacent local ports, pass the first port, for example `bash static-inspection/start.sh 48900`.
 
 Don’t start the desk on a shared machine or publish its ports. For a separate Docker host, see [remote access](#remote-access). The standalone CLI below doesn’t need Docker. All commands below this point run from `static-inspection/`.
 
@@ -41,13 +41,15 @@ The inspector refuses links, directories, special files, unsafe names, files lar
 python3 -IB -m unittest discover -s tests -v
 ```
 
-## The Bitrot Den
+## File inspection
 
-The workbench is Skellywix's dial-up-era personal homepage for static file checks. **File ID** identifies one file, **Build diff** compares two builds, and **Hash check** checks a SHA-256 against an independent reference. The worker accepts up to two 16 MiB files, retains only their size, SHA-256, format, and architecture, and never executes them. The standalone CLI above is unchanged.
+**INSPECT** has three tools: **IDENTIFY** reports file metadata, **COMPARE** shows differences between A and B, and **CHECK HASH** checks a SHA-256 against an independent reference. The worker accepts up to two 16 MiB files, retains only their size, SHA-256, format, and architecture, and never executes them. The standalone CLI above is unchanged.
 
-On wider screens, the specimens sit side by side. On narrow screens, they stack above the selected check, and the agent pact and ledger follow the file tools.
+On wide screens, file intake sits beside the selected tool. On phones, files, the check result, the evidence ledger, and optional agent access appear in that order. Each comparison keeps A (reference) and B (comparison) together for each field. “Differs” marks a difference; it isn’t a safety verdict.
 
-Skellywix runs the den. The chrome masthead, sysop portrait, 88 × 31 buttons, and IRC-style remarks are local: no autoplay, trackers, chat server, or external assets. The webring links jump to the tools, agent pact, and ledger on the same page. The counter tracks findings, not visitors. Tap Skellywix to pet her or drag her to a corner. Under **Skellywix options**, recap the whole folio, offer a treat, let her nap, or minimize her. Escape closes her message or menu. Care and recaps never start a tool or change the case.
+In a paired workspace, **BUILD** and **INSPECT** open in the same tab. The legacy root opens BUILD; `/index.html` opens the file tools. A standalone inspector has no BUILD link. Neither view reads the other service’s API.
+
+The mascot and all art are local. The counter tracks findings, not visitors. Tap Skellywix to pet her or drag her to a corner. Under **Skellywix options**, recap the case, offer a treat, let her nap, or minimize her. Care and recaps never start a tool or change the case. Escape closes the message or menu.
 
 The [lossless sprite sheet](workbench/ui/public/skelly.webp) has four transparent, hand-inked-style anime cels: tablet and delighted above, treat and nap below. [Dialogue and descriptions](workbench/ui/skelly-dialogue.json) are local. The [browser regression](tests/skelly-browser.cjs) exercises the pet without changing case data. With the desk on its default port and Playwright installed in your test environment, run `node tests/skelly-browser.cjs`.
 
@@ -62,13 +64,15 @@ worker=$(bash workbench/run.sh "$ipc")
 printf 'IPC directory: %s\nWorker: %s\n' "$ipc" "$worker"
 ```
 
+For a paired installation, use `bash workbench/run.sh "$ipc" --paired` instead of the worker command above. Use a fresh private IPC directory; don’t stop a worker holding an open case. Forward both inspector sockets as shown below and start the [Neverball build desk](../README.md#windows-game-profile-neverball-160) on its fixed loopback address. The worker adds navigation only to the HTML it serves, not to the standalone bundle.
+
 From the operator's computer, forward two adjacent **loopback-only** ports to the printed directory. Replace `HOST` with the SSH host and `IPC` with that absolute directory in both socket paths. Keep SSH open:
 
 ```sh
 ssh -NT -o ExitOnForwardFailure=yes -L 127.0.0.1:48730:IPC/desk.sock -L 127.0.0.1:48731:IPC/agent.sock HOST
 ```
 
-Open `http://127.0.0.1:48730/`. Choose specimen A and select **Load A**; load B to compare builds. Use the three tabs for individual checks. For one coordinated pass, open **Run the folio with Skellywix**, optionally enter an independently obtained SHA-256 for A, then select **Start folio review**. Skellywix identifies each specimen, compares the two if present, and checks A only when a reference is supplied. The pass stops after at most four local metadata checks. It doesn't loop or dispatch arbitrary agents.
+Open `http://127.0.0.1:48730/`. Choose file A and select **Load A**; load B to compare the files. For one coordinated pass, open **Run the case with Skellywix**, optionally enter an independently obtained SHA-256 for A, then select **Start case review**. Skellywix identifies each file, compares the two if present, and checks A only when you supply a reference. The pass stops after at most four local metadata checks. It doesn't loop or dispatch arbitrary agents.
 
 The **Evidence ledger** distinguishes your entries, Skellywix's checks, and paired-agent calls. It retains details for the latest 64 findings and totals for the whole revision, including earlier checksum mismatches. A later match doesn't erase a mismatch. Loading a file starts a new revision. Export the evidence before replacing a file, resetting, or stopping the worker.
 
@@ -84,13 +88,13 @@ Model review is optional and off by default. Use a trusted OMP session on the op
 review_next(completion)
 ```
 
-Select **Request a model critique**, then **Start folio review** within two minutes, or request the critique first and attach the adapter while it's pending. If a previous critique finished or expired, start the next review before attaching again. The adapter waits for that loaded revision only. It makes at most one stateless inference call with no tools or conversation history. The model sees only check names, actors, slot letters, outcome labels, counts, and event numbers. No file, path, digest, key, or case socket goes to the model. Don't pair this critic as an MCP agent.
+Select **Request a model critique**, then **Start case review** within two minutes, or request the critique first and attach the adapter while it's pending. If a previous critique finished or expired, start the next review before attaching again. The adapter waits for that loaded revision only. It makes at most one stateless inference call with no tools or conversation history. The model sees only check names, actors, slot letters, outcome labels, counts, and event numbers. No file, path, digest, key, or case socket goes to the model. Don't pair this critic as an MCP agent.
 
-A model note appears with links to the entries it cites. It isn't a finding and isn't included in the evidence export. A new finding invalidates it; a changed folio, cancellation, timeout, or failed validation cannot install a late note. **Cancel critique** applies only to the review displayed in that tab. Cancelling after dispatch can't recall information already sent. The adapter stops after one note or error. If no critic connects, no model note appears.
+A model note appears with links to the entries it cites. It isn't a finding and isn't included in the evidence export. A new finding invalidates it; a changed case, cancellation, timeout, or failed validation cannot install a late note. **Cancel critique** applies only to the review displayed in that tab. Cancelling after dispatch can't recall information already sent. The adapter stops after one note or error. If no critic connects, no model note appears.
 
 ### Pair a metadata agent
 
-**Pair agent** in the **Agent pact** issues a key for one folio. The desk distinguishes an issued key from a paired client. Configure the client outside the worker. Give it only the four case tools, not shell, file, or network tools. The agent listener accepts only `/mcp`; it can't load files, start a case or folio review, pair itself, or run programs.
+**Pair agent** under **Agent access** issues a key for one case. The desk distinguishes an issued key from a paired client. Configure the client outside the worker. Give it only the four case tools, not shell, file, or network tools. The agent listener accepts only `/mcp`; it can't load files, start a case review, pair itself, or run programs.
 
 Reports download as `skellywix-re-kit-evidence.json`. The report format identifier (`yuzu.report/1`) and revision header (`X-Yuzu-Revision`) remain unchanged for existing clients.
 

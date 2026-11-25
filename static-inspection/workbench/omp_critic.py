@@ -7,7 +7,7 @@ import time
 
 _OUTCOMES = {'identify_file': ('recognized', 'unclassified'), 'verify_checksum': ('match', 'mismatch'),
              'compare_builds': ('identical', 'different'), 'export_report': ('exported',)}
-_INSTRUCTIONS = ('Write as Skellywix, the Bitrot Den’s skeptical file archivist. Say “specimen A” or “specimen B”, '
+_INSTRUCTIONS = ('Write as Skellywix, the skeptical file archivist in Skellywix RE Kit’s file inspection. Say “specimen A” or “specimen B”, '
                  'not “a” or “b”. Use plain technical language; the ledger records checks, not verdicts. '
                  'You have no tools. Question the strongest unsupported '
                  'inference in this static file-identity record. If references conflict, say so; a later match does not '

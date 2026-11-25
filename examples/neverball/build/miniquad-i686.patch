@@ -1,0 +1,40 @@
+--- a/src/native/windows.rs
++++ b/src/native/windows.rs
+@@ -274,7 +274,7 @@
+             #[cfg(target_arch = "x86_64")]
+             SetWindowLongPtrA(self.wnd, GWL_STYLE, win_style as _);
+             #[cfg(target_arch = "x86")]
+-            SetWindowLong(self.wnd, GWL_STYLE, win_style as _);
++            SetWindowLongA(self.wnd, GWL_STYLE, win_style as _);
+ 
+             if self.fullscreen {
+                 SetWindowPos(
+@@ -386,7 +386,7 @@
+ 
+     #[cfg(target_pointer_width = "32")]
+     {
+-        display_ptr = GetWindowLong(hwnd, GWLP_USERDATA)
++        display_ptr = GetWindowLongA(hwnd, GWLP_USERDATA) as isize
+     }
+ 
+     if display_ptr == 0 {
+@@ -1241,7 +1241,7 @@
+         #[cfg(target_arch = "x86_64")]
+         SetWindowLongPtrA(wnd, GWLP_USERDATA, &mut display as *mut _ as isize);
+         #[cfg(target_arch = "x86")]
+-        SetWindowLong(wnd, GWLP_USERDATA, &mut display as *mut _ as isize);
++        SetWindowLongA(wnd, GWLP_USERDATA, &mut display as *mut _ as i32);
+ 
+         let mut done = false;
+         while !(done || crate::native_display().lock().unwrap().quit_ordered) {
+--- a/src/native/gl.rs
++++ b/src/native/gl.rs
+@@ -314,7 +314,7 @@
+             use super::*;
+ 
+             $(
+-                pub static mut $fn: Option<extern "C" fn ($($arg: $t),*) -> $res> = None;
++                pub static mut $fn: Option<extern "system" fn ($($arg: $t),*) -> $res> = None;
+             )*
+         }
+ 

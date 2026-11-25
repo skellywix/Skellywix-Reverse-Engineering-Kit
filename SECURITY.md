@@ -2,23 +2,43 @@
 
 ## Scope
 
-This project performs static analysis and dynamic execution of untrusted binaries. Treat submitted files, questions, model output, execution output, and fetched reports as hostile data.
+Skellywix RE Kit processes untrusted files, browser requests, staged release data, compiler output, and qualification evidence.
 
-The trusted boundary includes the Docker host, dispatcher, executor, gVisor, Docker, pinned images and dependencies, and configured model provider. The agent container parses hostile files. The execution container runs validated command vectors with no network, no model keys, no Docker socket, and only private per-job mounts.
+The active product has two input boundaries:
 
-## Threat model
+- **File inspection** reads bounded local files and reports metadata without executing them.
+- **BUILD** accepts only the hash-locked Neverball Windows ZIP and fixed request, and compiles operator-staged Rust source. It does not accept arbitrary commands, programs, or model prompts.
 
-The design assumes a submitted binary may exploit a parser, analysis tool, agent process, execution image, gVisor, or the host kernel; consume bounded resources; race files while they are read; or attempt to exfiltrate target data through an allowed model endpoint.
+## Trust boundary
 
-Controls include fresh per-job containers, root-owned source copies, content-addressed runtime images, a deny-first egress proxy, no execution-container network, no target secrets, closed request schemas, fixed launch flags, incremental `O_NOFOLLOW` walks, byte and entry caps, bounded publication, and fail-closed recovery.
+Trusted components are the Linux host, Docker, gVisor, the private operator socket, pinned compiler image, coordinator, and operator-controlled Windows qualification process. The compiler runs in a networkless container with read-only inputs and no model credentials.
+
+The Neverball compiler runs offline. It never starts the uploaded game or candidate executable on the host. Windows qualification is a separate trusted operator step. The web interface cannot create the receipt that unlocks the download.
+
+The operator desk is served through a Unix socket and intended to be forwarded only to a loopback address. Anyone who can reach that forward can operate the desk. Do not expose it on a LAN or public interface.
+
+## Controls
+
+- Fixed request, original distribution, compiler, recipe, and dependency pins.
+- No caller-supplied sandbox command or network destination.
+- gVisor, read-only roots and mounts, dropped capabilities, `no-new-privileges`, and resource limits.
+- Origin and host checks on browser requests.
+- Optional inspector integrations are operator-initiated and metadata-only: one stateless, redacted critic call or four read-only case tools behind a revocable, expiring folio key. Neither path can load or execute a specimen.
+- Exclusive file creation, bounded input and output, and immutable per-attempt inputs.
+- Run-bound Windows observations and matching package digests before download.
+- Download packages only for verified attempts.
+- Passive file signatures that do not claim a file is safe.
+- Default-deny third-party intake: no external installer, MCP server, client registration, host bridge, agent, prompt, plugin, mesh, or unpinned tool bundle is active. Reference material needs verified provenance and licensing; executable capability needs an independent bounded implementation and file-boundary tests.
 
 ## Accepted risks
 
-- Model keys exist inside each per-job agent container. A compromised agent can read them.
-- The model cost cap is enforced only for an uncompromised agent. A compromised agent can call an allowed endpoint directly.
-- Redaction is best effort. Exact-value replacement does not catch encoded, split, transformed, encrypted, or indirect disclosure.
-- Allowed model endpoints can carry target data.
 - gVisor reduces kernel attack surface but is not a virtual-machine boundary.
+- A malicious file may exploit a parser before the file is rejected.
+- A receipt establishes that the trusted qualification process recorded agreement. It cannot prove that an untrusted operator ran the comparison.
+- The optional inspector critic sends limited metadata to its configured provider only at the operator’s request.
+- A verified build covers its named cases, not all gameplay, hardware, or input devices.
+
+Host debugger control, process attachment, memory editing, arbitrary binary execution, and autonomous exploit-development workflows are outside the active product boundary.
 
 ## Report a vulnerability
 

@@ -17,25 +17,25 @@
   ],
   "nap": "AFK. Wake me when the modem sings.",
   "wake": "Back from AFK. Who touched my mixtape?",
-  "unavailable": "Lost carrier. I can’t see this folio from here.",
+  "unavailable": "The local desk is offline. I can’t see this case from here.",
   "samples": [
-    "Fresh disk smell. Not a byte in the guestbook.",
-    "A is in the drive. Let’s see what its header says.",
-    "Two files on deck. Time for the side-by-side."
+    "No files yet. Load one into A to start.",
+    "A is loaded. Let’s see what its header says.",
+    "Two files loaded. Time for the side-by-side."
   ],
   "workflow": {
-    "identify_file": "File ID. Headers first, forum lore second.",
-    "compare_builds": "A on one deck, B on the other. Spot the remix.",
-    "verify_checksum": "Bring your own reference hash. No file gets to sign its own guestbook."
+    "identify_file": "Identify. Headers first.",
+    "compare_builds": "A on the left, B on the right. Spot the difference.",
+    "verify_checksum": "Bring your own reference hash. A file can’t vouch for itself."
   },
   "case": {
-    "inspect": "Header read. Size, format, fingerprint. Into the .NFO it goes.",
+    "inspect": "Header read. Size, format, and fingerprint are in the ledger.",
     "match": "Hashes match. Keep the source of that reference handy.",
-    "mismatch": "Hash mismatch. Save the reference with your .NFO.",
-    "mixed": "This one matches. The earlier mismatch still counts in this folio.",
-    "identical": "Same hash on both decks. No difference showed up in this check.",
-    "different": "Different builds. The side-by-side has the receipts.",
-    "critique": "Second opinion just landed. Check the posts it cites, not the attitude.",
-    "export": "Ledger copied. Take those receipts with you."
+    "mismatch": "Hash mismatch. Save the reference with your notes.",
+    "mixed": "This one matches. The earlier mismatch still counts in this case.",
+    "identical": "Same hash on both files. No difference showed up in this check.",
+    "different": "Different builds. The side-by-side shows where.",
+    "critique": "Second opinion just landed. Check the entries it cites, not the tone.",
+    "export": "Evidence exported. Keep the file with your case notes."
   }
 }

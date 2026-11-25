@@ -23,6 +23,7 @@ from protocol import rpc
 MAX_JSON = 8192
 HOST = re.compile(r'(?:localhost|127\.0\.0\.1|\[::1\])(?::[0-9]{1,5})?\Z', re.ASCII)
 CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+TEAM_HOME = 'http://127.0.0.1:48784/'
 
 
 def _object(pairs: list) -> dict:
@@ -50,7 +51,8 @@ class Handler(BaseHTTPRequestHandler):
     server_version = 'Skellywix-RE-Kit'
     sys_version = ''
 
-    def __init__(self, *args, case, lock, desk, assets, **kwargs):
+    def __init__(self, *args, case, lock, desk, assets, paired=False, **kwargs):
+        self.paired = paired
         self.case, self.lock, self.desk, self.assets = case, lock, desk, assets
         super().__init__(*args, **kwargs)
 
@@ -138,6 +140,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _operator(self):
         if self.command in ('GET','HEAD'):
+            if self.paired and self.path == '/':
+                return self._respond(302, mime='text/plain', headers={'Location': TEAM_HOME})
             if self.path in self.assets:
                 mime, body = self.assets[self.path]
                 return self._respond(200, body, mime)
@@ -242,17 +246,26 @@ class Handler(BaseHTTPRequestHandler):
     do_GET = do_HEAD = do_DELETE = do_POST = _dispatch
 
 
-def serve(ipc: Path, web: Path):
+def serve(ipc: Path, web: Path, *, paired: bool = False, case: Case | None = None):
     info = ipc.lstat()
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
         raise SystemExit('IPC must be a private directory (0700) owned by the current user.')
     os.umask(0o077)
-    case, lock, assets = Case(), Lock(), static_assets(web)
+    case = Case() if case is None else case
+    lock, assets = Lock(), static_assets(web)
+    if paired:
+        mime, page = assets['/index.html']
+        if page.count(b'</head>') != 1:
+            raise RuntimeError('The file inspection page needs one document head.')
+        marker = b'<meta name="skellywix-workspace" content="paired">'
+        assets['/index.html'] = (mime, page.replace(b'</head>', marker + b'</head>'))
     with ExitStack() as cleanup:
         servers = []
         for name in ('desk','agent'):
             address = ipc / (name + '.sock')
-            handler = partial(Handler, case=case, lock=lock, desk=name == 'desk', assets=assets if name == 'desk' else {})
+            desk = name == 'desk'
+            handler = partial(Handler, case=case, lock=lock, desk=desk,
+                              assets=assets if desk else {}, paired=paired and desk)
             server = socketserver.UnixStreamServer(str(address), handler)
             cleanup.callback(address.unlink, missing_ok=True)
             cleanup.enter_context(server)
@@ -266,5 +279,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--ipc', required=True, type=Path)
     parser.add_argument('--web', required=True, type=Path)
+    parser.add_argument('--paired', action='store_true', help='Use the fixed loopback team workflow as the workspace home.')
+    parser.add_argument('--restore-case', type=Path, help='Start from an offline private operator state export.')
     opts = parser.parse_args()
-    serve(opts.ipc, opts.web)
+    initial = None
+    if opts.restore_case is not None:
+        from case_recovery import CaseRestoreError, load_case
+        try:
+            initial = load_case(opts.restore_case)
+        except CaseRestoreError as exc:
+            parser.exit(1, f'{exc}\n')
+    serve(opts.ipc, opts.web, paired=opts.paired, case=initial)

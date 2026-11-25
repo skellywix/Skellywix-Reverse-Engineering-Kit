@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#fcfdf8">
+  <title>BUILD · Skellywix RE Kit</title>
+  <link rel="stylesheet" href="/desk.css">
+  <script src="/game.js" defer></script>
+</head>
+
+<body>
+  <a class="skip" href="#main">Skip to rebuild</a>
+  <header>
+    <div class="bar">
+      <h1><span class="mark" aria-hidden="true">RE</span>Skellywix RE Kit</h1>
+      <nav aria-label="Workspace"><a href="#main" aria-current="page">BUILD</a><a id="nav-inspect"
+          href="http://127.0.0.1:48730/index.html" referrerpolicy="no-referrer" hidden>INSPECT</a></nav>
+    </div>
+  </header>
+  <main id="main" tabindex="-1">
+    <div class="intro">
+      <p class="kicker">WINDOWS BUILD</p>
+      <h2>Rebuild Neverball</h2>
+      <p>Choose the original Neverball 1.6.0 Windows ZIP. The builder checks its identity and compiles the licensed Rust
+        port. It never runs the upload.</p>
+    </div>
+    <div class="panels">
+      <form id="game-form" aria-labelledby="source-heading">
+        <h3 id="source-heading">Build inputs</h3>
+        <label for="game-file">Original app</label>
+        <input id="game-file" name="file" type="file" accept=".zip,application/zip" required
+          aria-describedby="file-hint">
+        <small id="file-hint">Use the original, unmodified Windows ZIP.</small>
+        <label for="game-prompt">Build request</label>
+        <input id="game-prompt" name="request" type="text" maxlength="100" required disabled
+          aria-describedby="request-hint">
+        <small id="request-hint">Only the displayed request is supported.</small>
+        <button class="primary" id="game-start" type="submit" disabled>Rebuild for Windows</button>
+      </form>
+      <section aria-labelledby="game-status-heading">
+        <div class="result-head">
+          <h3 id="game-status-heading">Build status</h3><button id="game-refresh" type="button">Refresh</button>
+        </div>
+        <p id="game-status" role="status">Checking the game builder…</p>
+        <p id="game-error" role="alert"></p>
+        <ol id="game-events" aria-label="Run events"></ol>
+        <a id="game-download" class="primary" download="neverball-windows.zip" hidden>Download for Windows</a>
+        <p id="game-receipt"></p>
+      </section>
+    </div>
+  </main>
+</body>
+
+</html>

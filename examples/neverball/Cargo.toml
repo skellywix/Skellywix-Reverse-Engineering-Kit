@@ -1,0 +1,25 @@
+[package]
+name = "neverball"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Rust port of the Neverball 1.6.0 level loader and ball contact rules"
+license = "GPL-2.0-or-later"
+publish = false
+
+[lib]
+name = "neverball"
+path = "src/lib.rs"
+
+# Diagnostic only: loads and checks the extracted level files. It is not the game.
+[[bin]]
+name = "levelcheck"
+path = "src/bin/levelcheck.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+expect_used = "deny"
+unwrap_used = "deny"

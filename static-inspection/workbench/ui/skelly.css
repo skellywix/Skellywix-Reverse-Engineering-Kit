@@ -1,6 +1,10 @@
+:root {
+  --skelly-w: min(clamp(72px, 6vw, 104px), 36dvh);
+}
+
 .skelly-pet {
   --edge: clamp(8px, 1.25vw, 18px);
-  --sprite-width: min(clamp(96px, 12vw, 168px), 36dvh);
+  --sprite-width: var(--skelly-w);
   position: fixed;
   z-index: 4;
   right: max(var(--edge), env(safe-area-inset-right));
@@ -23,7 +27,7 @@
 }
 
 .skelly-pet button:focus-visible {
-  outline: 3px solid var(--focus);
+  outline: 3px solid var(--petrol);
   outline-offset: 2px;
 }
 
@@ -49,7 +53,7 @@
   width: 100%;
   aspect-ratio: 2 / 3;
   background: url('/skelly.webp') no-repeat 0 0 / 200% 200%;
-  filter: drop-shadow(1px 3px 2px rgb(17 13 21 / 70%));
+  filter: drop-shadow(0 2px 2px rgb(24 44 44 / 25%));
   transform-origin: 50% 95%;
 }
 
@@ -76,11 +80,10 @@
 
 .skelly-options,
 .skelly-pet[data-small="true"] .skelly-sprite {
-  color: #251c23;
-  border: 2px solid;
-  border-color: #ffe2b5 #80513e #754535 #ffca8e;
-  background: #efaa73;
-  border-radius: 0;
+  color: var(--ink);
+  border: 1px solid var(--control);
+  background: var(--sheet);
+  border-radius: 3px;
 }
 
 .skelly-options {
@@ -90,15 +93,17 @@
   display: grid;
   place-items: center;
   width: 34px;
-  height: 30px;
+  height: 32px;
   min-height: 0;
   padding: 0;
 }
 
 .skelly-pet[data-small="true"] .skelly-sprite {
   width: auto;
-  padding: 5px 13px;
-  font: 600 .98rem/1.2 var(--display);
+  padding: 4px 12px;
+  font: 700 .84rem/1.2 var(--display);
+  letter-spacing: .07em;
+  text-transform: uppercase;
   cursor: pointer;
   touch-action: manipulation;
 }
@@ -127,26 +132,28 @@
 .skelly-bubble {
   display: block;
   position: relative;
-  padding: 8px 12px 10px;
-  border: 2px solid;
-  border-color: #d69fbf #72576c #72576c #d69fbf;
-  background: #241b27;
-  color: var(--on-dark);
-  font: .94rem/1.4 var(--terminal);
+  padding: 7px 11px 8px;
+  border: 1px solid var(--control);
+  border-left: 3px solid var(--orchid);
+  border-radius: 3px;
+  background: var(--sheet);
+  color: var(--ink);
+  font: .9rem/1.4 var(--display);
   text-wrap: pretty;
-  box-shadow: 1px 3px 5px #16101980;
 }
 
 .skelly-bubble b,
 .skelly-handle {
   display: block;
-  font: bold .79rem/1.4 var(--terminal);
-  color: #f1b6fa;
+  font: 700 .72rem/1.4 var(--display);
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--orchid);
 }
 
 .skelly-handle {
-  background: #603e58;
-  color: var(--on-dark);
+  background: var(--raised);
+  color: var(--dim);
   padding: 3px 7px;
 }
 
@@ -156,25 +163,25 @@
   top: 15px;
   right: -9px;
   border-block: 5px solid transparent;
-  border-left: 10px solid #b389a5;
+  border-left: 9px solid var(--control);
 }
 
 .skelly-pet[data-corner$="left"] .skelly-bubble::after {
   right: auto;
-  left: -9px;
+  left: -12px;
   border-left: 0;
-  border-right: 10px solid #b389a5;
+  border-right: 9px solid var(--control);
 }
 
 .skelly-actions {
   bottom: 0;
   display: grid;
   gap: 2px;
-  padding: 5px;
+  padding: 4px;
   max-height: calc(100dvh - var(--edge) - var(--edge));
   overflow-y: auto;
-  border: 2px solid;
-  border-color: var(--rim);
+  border: 1px solid var(--control);
+  border-radius: 3px;
   background: var(--sheet);
   pointer-events: auto;
 }
@@ -189,7 +196,7 @@
 }
 
 .skelly-actions button {
-  padding: 6px 11px;
+  padding: 5px 11px;
   min-height: 36px;
   border: 0;
   background: transparent;
@@ -198,20 +205,25 @@
   text-align: left;
 }
 
+.skelly-actions button:disabled {
+  color: #5f7471;
+  background: transparent;
+}
+
 .skelly-actions button:hover:not(:disabled),
 .skelly-options:hover:not(:disabled),
 .skelly-pet[data-small="true"] .skelly-sprite:hover {
   color: var(--ink);
-  background: var(--wash);
+  background: var(--raised);
 }
 
 @media (max-width: 600px) {
-  .skelly-pet {
-    --sprite-width: min(clamp(72px, 23vw, 106px), 36dvh);
+  :root {
+    --skelly-w: min(clamp(60px, 18vw, 84px), 36dvh);
   }
 
   .skelly-bubble {
-    padding: 10px 13px;
+    padding: 8px 11px;
   }
 }
 

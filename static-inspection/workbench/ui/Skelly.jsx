@@ -80,8 +80,8 @@ export default function Skelly({ revision, number, tool, matches, identical, mod
   }
 
   function recap() {
-    const text = revision == null ? voice.unavailable : !total ? (sampleCount ? 'Files on deck. Nobody’s logged a check yet.' : 'Fresh disk. Drop a specimen in A and I’ll keep score.') :
-      `${total} ${total === 1 ? 'entry' : 'entries'} in this folio. ${mismatches ? `${mismatches} checksum ${mismatches === 1 ? 'mismatch' : 'mismatches'} on record.` : 'No checksum mismatch recorded.'}${omitted ? ` ${omitted} earlier entries are count-only.` : ''}`;
+    const text = revision == null ? voice.unavailable : !total ? (sampleCount ? 'Files loaded. No check logged yet.' : 'No files yet. Load a file in A and I’ll keep count.') :
+      `${total} ${total === 1 ? 'entry' : 'entries'} in this case. ${mismatches ? `${mismatches} checksum ${mismatches === 1 ? 'mismatch' : 'mismatches'} on record.` : 'No checksum mismatch recorded.'}${omitted ? ` ${omitted} earlier entries are count-only.` : ''}`;
     setMenu(false);
     setSpeech({ text, pose: 'tablet' });
     sprite.current?.focus({ preventScroll: true });
@@ -134,8 +134,8 @@ export default function Skelly({ revision, number, tool, matches, identical, mod
         <svg width="18" height="6" viewBox="0 0 18 6" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.5"/><circle cx="9" cy="3" r="1.5"/><circle cx="15" cy="3" r="1.5"/></svg>
       </button>
       <div id="skelly-actions" role="group" aria-label="Skellywix actions" className="skelly-actions" hidden={!menu}>
-        <span className="skelly-handle" aria-hidden="true">~skellywix / sysop</span>
-        <button type="button" disabled={asleep} onClick={recap}>Recap this folio</button>
+        <span className="skelly-handle" aria-hidden="true">Skellywix</span>
+        <button type="button" disabled={asleep} onClick={recap}>Recap this case</button>
         <button type="button" disabled={asleep} onClick={() => care('feed')}>Give a treat</button>
         <button type="button" onClick={() => care(asleep ? 'wake' : 'nap')}>{asleep ? 'Wake her up' : 'Let her nap'}</button>
         <button type="button" onClick={() => { setCorner(corners[(corners.indexOf(corner) + 1) % corners.length]); setMenu(false); options.current?.focus({ preventScroll: true }); }}>Move to next corner</button>
@@ -143,7 +143,7 @@ export default function Skelly({ revision, number, tool, matches, identical, mod
       </div>
     </>}
     <div className="skelly-voice" role="status" aria-label="Skellywix says" aria-atomic="true">
-      {speech && !menu && !small && <span className="skelly-bubble"><b aria-hidden="true">&lt;skellywix&gt;</b>{speech.text}</span>}
+      {speech && !menu && !small && <span className="skelly-bubble"><b aria-hidden="true">Skellywix</b>{speech.text}</span>}
     </div>
   </div>;
 }
