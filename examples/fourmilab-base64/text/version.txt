@@ -1,0 +1,4 @@
+base64 1.5
+Last revised: 10th June 2007
+The latest version is always available
+at http://www.fourmilab.ch/webtools/base64

@@ -1,0 +1,278 @@
+[
+  {
+    "id": "delete-status",
+    "held_out": false,
+    "exit": 0,
+    "stderr_latin1": "",
+    "status": 405,
+    "headers": [
+      [
+        "allow",
+        "GET, HEAD"
+      ],
+      [
+        "connection",
+        "close"
+      ],
+      [
+        "content-length",
+        "19"
+      ],
+      [
+        "content-type",
+        "text/plain; charset=utf-8"
+      ]
+    ],
+    "body_latin1": "method not allowed\n"
+  },
+  {
+    "id": "get-missing",
+    "held_out": false,
+    "exit": 0,
+    "stderr_latin1": "",
+    "status": 404,
+    "headers": [
+      [
+        "connection",
+        "close"
+      ],
+      [
+        "content-length",
+        "10"
+      ],
+      [
+        "content-type",
+        "text/plain; charset=utf-8"
+      ]
+    ],
+    "body_latin1": "not found\n"
+  },
+  {
+    "id": "get-status",
+    "held_out": false,
+    "exit": 0,
+    "stderr_latin1": "",
+    "status": 200,
+    "headers": [
+      [
+        "connection",
+        "close"
+      ],
+      [
+        "content-length",
+        "3"
+      ],
+      [
+        "content-type",
+        "text/plain; charset=utf-8"
+      ]
+    ],
+    "body_latin1": "ok\n"
+  },
+  {
+    "id": "head-status",
+    "held_out": false,
+    "exit": 0,
+    "stderr_latin1": "",
+    "status": 200,
+    "headers": [
+      [
+        "connection",
+        "close"
+      ],
+      [
+        "content-length",
+        "3"
+      ],
+      [
+        "content-type",
+        "text/plain; charset=utf-8"
+      ]
+    ],
+    "body_latin1": ""
+  },
+  {
+    "id": "held-01",
+    "held_out": true,
+    "exit": 0,
+    "stderr_latin1": "",
+    "status": 200,
+    "headers": [
+      [
+        "connection",
+        "close"
+      ],
+      [
+        "content-length",
+        "3"
+      ],
+      [
+        "content-type",
+        "text/plain; charset=utf-8"
+      ]
+    ],
+    "body_latin1": "ok\n"
+  },
+  {
+    "id": "held-02",
+    "held_out": true,
+    "exit": 0,
+    "stderr_latin1": "",
+    "status": 404,
+    "headers": [
+      [
+        "connection",
+        "close"
+      ],
+      [
+        "content-length",
+        "10"
+      ],
+      [
+        "content-type",
+        "text/plain; charset=utf-8"
+      ]
+    ],
+    "body_latin1": "not found\n"
+  },
+  {
+    "id": "held-03",
+    "held_out": true,
+    "exit": 0,
+    "stderr_latin1": "",
+    "status": 404,
+    "headers": [
+      [
+        "connection",
+        "close"
+      ],
+      [
+        "content-length",
+        "10"
+      ],
+      [
+        "content-type",
+        "text/plain; charset=utf-8"
+      ]
+    ],
+    "body_latin1": "not found\n"
+  },
+  {
+    "id": "held-04",
+    "held_out": true,
+    "exit": 0,
+    "stderr_latin1": "",
+    "status": 400,
+    "headers": [
+      [
+        "connection",
+        "close"
+      ],
+      [
+        "content-length",
+        "12"
+      ],
+      [
+        "content-type",
+        "text/plain; charset=utf-8"
+      ]
+    ],
+    "body_latin1": "bad request\n"
+  },
+  {
+    "id": "held-05",
+    "held_out": true,
+    "exit": 0,
+    "stderr_latin1": "",
+    "status": 400,
+    "headers": [
+      [
+        "connection",
+        "close"
+      ],
+      [
+        "content-length",
+        "12"
+      ],
+      [
+        "content-type",
+        "text/plain; charset=utf-8"
+      ]
+    ],
+    "body_latin1": "bad request\n"
+  },
+  {
+    "id": "held-06",
+    "held_out": true,
+    "exit": 0,
+    "stderr_latin1": "",
+    "status": 405,
+    "headers": [
+      [
+        "allow",
+        "GET, HEAD"
+      ],
+      [
+        "connection",
+        "close"
+      ],
+      [
+        "content-length",
+        "19"
+      ],
+      [
+        "content-type",
+        "text/plain; charset=utf-8"
+      ]
+    ],
+    "body_latin1": "method not allowed\n"
+  },
+  {
+    "id": "held-07",
+    "held_out": true,
+    "exit": 0,
+    "stderr_latin1": "",
+    "status": 200,
+    "headers": [
+      [
+        "connection",
+        "close"
+      ],
+      [
+        "content-length",
+        "3"
+      ],
+      [
+        "content-type",
+        "text/plain; charset=utf-8"
+      ]
+    ],
+    "body_latin1": "ok\n"
+  },
+  {
+    "id": "post-status",
+    "held_out": false,
+    "exit": 0,
+    "stderr_latin1": "",
+    "status": 405,
+    "headers": [
+      [
+        "allow",
+        "GET, HEAD"
+      ],
+      [
+        "connection",
+        "close"
+      ],
+      [
+        "content-length",
+        "19"
+      ],
+      [
+        "content-type",
+        "text/plain; charset=utf-8"
+      ]
+    ],
+    "body_latin1": "method not allowed\n"
+  }
+]

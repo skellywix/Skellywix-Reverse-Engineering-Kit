@@ -4,11 +4,16 @@ Python 3.13 standard library, Linux only. This module never executes uploaded or
 the produced PE on the host. The only executable profile is the pinned offline compiler image below, started
 with fixed arguments inside gVisor; nothing in a request chooses a command, image, mount, or path.
 
-The build output is a *candidate*. It is released only after `package()` finds a private, host-owned
-qualification receipt (see RECEIPT FORMAT) that binds this exact run, PE, ZIP and journal entry and whose
-independent Windows observations of the original and candidate agree. Nothing in this class can write that
-receipt; the web layer must not either. A receipt is proof that the *host-owned QA process* said so, not that
-this module observed Windows run. See the limits in `qualification_contract()`.
+The build output is a *candidate*. A finished candidate whose stored ZIP still matches its journaled hash and
+passes the structural checks of `verify_candidate_zip` is downloadable at once, labelled "built, not play-tested":
+no Windows observation gates it. `package()` re-hashes the archive on every download; `status()` re-hashes only
+when the file's identity changes, so frequent polling does not re-read large archives.
+
+Independent Windows evidence is optional and separate. If a private, host-owned qualification receipt (see RECEIPT
+FORMAT) binds this exact run, PE, ZIP and journal entry and its observations of the original and candidate agree,
+the run becomes `proven`, the only state that carries `verified_sha256`. A fresh receipt that disagrees fails the
+run. Nothing in this class can write that receipt; the web layer must not either. A receipt is proof that the
+*host-owned QA process* said so, not that this module observed Windows run. See `qualification_contract()`.
 
 RELEASE LAYOUT (admin-staged, immutable; verified on every start and again before the compiler runs):
     release/source/              GPL Rust port: Cargo.toml, desktop/{Cargo.toml,Cargo.lock,src/}, build/windows-i686.Dockerfile,
@@ -21,8 +26,10 @@ RELEASE LAYOUT (admin-staged, immutable; verified on every start and again befor
     Nothing else may be in release/. Entries must be owned by root or this user and not group/other writable.
 
 JOURNAL: root/<run>/journal.jsonl, one hash-chained fsynced line per transition:
-    queued -> build -> package -> waiting_windows -> proven;   any non-terminal state -> failed.
-    Terminal: failed, proven. Pins (input, toolchain, actual PE and ZIP hashes) are recorded in event data.
+    queued -> build -> package -> built -> proven;   any non-terminal state -> failed.
+    Runs journaled before `built` existed end package -> waiting_windows (same transitions) and stay readable.
+    Terminal: failed, proven. `built` and `waiting_windows` are downloadable but not play-tested; only `proven` is.
+    Pins (input, toolchain, actual PE and ZIP hashes) are recorded in event data.
 
 RECEIPT FORMAT: root/<run>/qualification.json (see `qualification_contract()` for the machine-readable form).
 """
@@ -42,6 +49,7 @@ import threading
 import time
 import uuid
 import zipfile
+import zlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -65,10 +73,15 @@ ARTIFACT = 'neverball.exe'  # private PE bytes on disk; mode 0400; never execute
 BUILD_LOG = 'build.log'
 ZIP_STAMP = (2026, 1, 1, 0, 0, 0)
 
-NONTERMINAL = ('queued', 'build', 'package', 'waiting_windows')
+NONTERMINAL = ('queued', 'build', 'package', 'built', 'waiting_windows')
 BUSY_STATES = ('queued', 'build', 'package')
+CANDIDATE_STATES = ('built', 'waiting_windows')  # journal entry that binds the finished candidate; no accepted evidence yet
+READY_STATES = CANDIDATE_STATES + ('proven',)  # a finished candidate exists and may be downloaded if its archive is intact
 TRANSITIONS = {None: ('queued',), 'queued': ('build', 'failed'), 'build': ('package', 'failed'),
-               'package': ('waiting_windows', 'failed'), 'waiting_windows': ('proven', 'failed')}
+               'package': ('built', 'waiting_windows', 'failed'),  # waiting_windows is read for older journals only
+               'built': ('proven', 'failed'), 'waiting_windows': ('proven', 'failed')}
+BUILT_MESSAGE = ('Built and structurally checked. The download is ready; it has not been play-tested on Windows. '
+                 'Independent Windows evidence is optional and is shown separately if recorded.')
 
 MAX_PE = 64 << 20
 MIN_PE = 64 << 10
@@ -121,7 +134,7 @@ class JournalError(GameJobError):
 
 
 class Unqualified(GameJobError):
-    """No acceptable qualification receipt exists yet. The run stays in waiting_windows."""
+    """Optional independent Windows evidence is absent or not acceptable yet. The run stays downloadable but unverified."""
 
 
 class Rejected(GameJobError):
@@ -189,7 +202,8 @@ def qualification_contract():
     return {
         'version': 1, 'receipt': RECEIPT, 'evidence_dir': EVIDENCE_DIR,
         'top': ['version', 'run', 'reference_sha256', 'artifact_sha256', 'zip_sha256', 'binding', 'checks'],
-        'binding': 'status()["candidate"]["binding"]: hash of the waiting_windows journal entry; exists only after packaging',
+        'binding': 'status()["candidate"]["binding"]: hash of the journal entry that recorded the finished candidate '
+                   '(built; waiting_windows in older runs); exists only after packaging',
         'reference_sha256': ORIGINAL_ZIP_SHA256,
         'side': {'method': 'windows_run', 'subject_sha256': 'original: sha256 of original neverball.exe; candidate: artifact_sha256',
                  'evidence': 'file name in evidence_dir; nonempty; 1..8 MiB; mtime after packaging; must contain the run id, '
@@ -202,6 +216,7 @@ def qualification_contract():
                    for c in REQUIRED],
         'rules': 'Exactly the named checks, no duplicates or extras; evidence names and hashes unique across all sides; '
                  'receipt and evidence owned by the service user or root, not group/other writable.',
+        'optional': 'Evidence is optional. It never gates the download; accepted evidence only adds verified_sha256.',
         'limits': 'The host verifies shape, bindings, freshness and agreement. It cannot prove the QA process truly ran '
                   'Windows; the receipt directory must be writable only by that process and never by a web request.',
     }
@@ -568,6 +583,11 @@ def _expect(cond, message):
         raise Unqualified(message)
 
 
+def _stat_key(info):
+    """Identity of a stored file: when it is unchanged, a previous full check of its bytes still holds."""
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
 class GameJobs:
     """One fixed job type, one attempt at a time, durable and honest after a restart."""
 
@@ -582,6 +602,7 @@ class GameJobs:
         self._stop = threading.Event()
         self._active = None
         self._thread = None
+        self._intact = {}  # run -> _stat_key of a candidate ZIP whose bytes were fully checked
         _private_dir(root)
         self._fd = os.open(root / 'game_jobs.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
         try:
@@ -747,43 +768,66 @@ class GameJobs:
                 return {'id': run, 'state': 'failed', 'message': 'Journal integrity check failed: ' + str(exc), 'events': [],
                         'busy': False}
             pending = None
-            if events[-1]['state'] == 'waiting_windows':
+            if events[-1]['state'] in CANDIDATE_STATES and self._receipt_exists(run):
                 try:
                     events = self._settle(run, events)
                 except Unqualified as exc:
                     pending = str(exc)
                 except Rejected:
                     events, _ = self._load(run)
+            ready, download, problem = self._candidate(events), None, None
+            if events[-1]['state'] in READY_STATES:
+                try:
+                    self._require_archive(run, events, ready, cached=True)
+                    download = ready['zip_sha256']
+                except GameJobError as exc:
+                    problem = clip(str(exc))
+                    events, _ = self._load(run)  # a missing or altered archive may just have journaled failed
             last = events[-1]
             view = {'id': run, 'state': last['state'], 'message': last['message'], 'busy': self._active == run,
                     'events': [{k: e[k] for k in ('seq', 'at', 'state', 'message', 'data')} for e in events]}
-            ready = self._candidate(events)
             if ready:
                 view['candidate'] = {k: ready[k] for k in ('artifact_sha256', 'zip_sha256', 'binding')}
-            if last['state'] == 'waiting_windows':
+            if last['state'] in READY_STATES:
+                view['download_ready'] = download is not None
+                if download is not None:
+                    view['download_sha256'] = download
+                    if last['state'] != 'proven':
+                        view['message'] = BUILT_MESSAGE  # also for runs journaled as waiting_windows; their history is unchanged
+                else:
+                    view['download_problem'] = problem
+                    view['message'] = problem
+                view['play_tested'] = last['state'] == 'proven' and download is not None
+            if last['state'] in CANDIDATE_STATES:
                 view['qualification'] = qualification_contract()
-                view['qualification_pending'] = pending or 'No qualification receipt has been recorded.'
-            if last['state'] == 'proven':
+                view['qualification_pending'] = pending or 'No independent Windows evidence has been recorded. It is optional.'
+            if last['state'] == 'proven' and download is not None:
                 view['verified_sha256'] = last['data']['verified_sha256']
             return view
 
     def package(self, run):
-        """Return (private candidate ZIP path, sha256) only for a run with an accepted qualification receipt."""
+        """Return (private candidate ZIP path, sha256) of a finished, intact candidate.
+
+        Independent evidence is optional: an acceptable receipt promotes the run to proven, a fresh disagreeing one fails
+        it (Rejected), anything else leaves it built. Failed, unfinished, damaged and missing archives never download.
+        """
         with self._lock:
             if not isinstance(run, str) or not RUN.fullmatch(run):
                 raise ValueError('Unknown run.')
             events, _ = self._load(run)
-            if events[-1]['state'] == 'waiting_windows':
-                events = self._settle(run, events)
-            if events[-1]['state'] != 'proven':
-                raise GameJobError(f'Run is {events[-1]["state"]}, not proven; no package is available.')
+            if events[-1]['state'] in CANDIDATE_STATES and self._receipt_exists(run):
+                try:
+                    events = self._settle(run, events)
+                except Unqualified:
+                    pass  # evidence is optional; without acceptable evidence the run stays built and the archive check decides
+            state = events[-1]['state']
+            if state not in READY_STATES:
+                raise GameJobError(f'Run is {state}; no package is available.')
             ready = self._candidate(events)
-            path = self.root / run / CANDIDATE
-            if path.is_symlink() or not path.is_file() or sha256_file(path) != ready['zip_sha256'] or (
-                    events[-1]['data']['verified_sha256'] != ready['zip_sha256']):
+            self._require_archive(run, events, ready, cached=False)
+            if state == 'proven' and events[-1]['data']['verified_sha256'] != ready['zip_sha256']:
                 raise GameJobError('The candidate ZIP no longer matches its journaled hash.')
-            verify_candidate_zip(path, ready['artifact_sha256'], self.pins)
-            return path, ready['zip_sha256']
+            return self.root / run / CANDIDATE, ready['zip_sha256']
 
     def receipt_path(self, run):
         """Where the host-owned QA process must place qualification.json (never a web-writable location)."""
@@ -800,11 +844,47 @@ class GameJobs:
 
     def _candidate(self, events):
         for entry in events:
-            if entry['state'] == 'waiting_windows':
+            if entry['state'] in CANDIDATE_STATES:
                 package = next(e for e in events if e['state'] == 'package')
                 return {'artifact_sha256': package['data']['artifact_sha256'], 'zip_sha256': entry['data']['zip_sha256'],
                         'binding': entry['hash'], 'ns': entry['ns'], 'original_exe_sha256': entry['data']['original_exe_sha256']}
         return None
+
+    def _receipt_exists(self, run):
+        return os.path.lexists(self.root / run / RECEIPT)
+
+    def _verify_archive(self, run, ready, *, cached):
+        """Prove the stored ZIP is the journaled candidate. Rejected: missing or wrong bytes. GameJobError: not a valid package.
+
+        `cached` accepts an earlier full check while the file's identity (device, inode, size, mtime, ctime) is unchanged.
+        """
+        path = self.root / run / CANDIDATE
+        try:
+            info = os.lstat(path)
+        except FileNotFoundError:
+            raise Rejected('The candidate ZIP no longer matches its journaled hash.') from None
+        if not stat.S_ISREG(info.st_mode):
+            raise Rejected('The candidate ZIP no longer matches its journaled hash.')
+        key = _stat_key(info)
+        if cached and self._intact.get(run) == key:
+            return
+        self._intact.pop(run, None)
+        if sha256_file(path) != ready['zip_sha256']:
+            raise Rejected('The candidate ZIP no longer matches its journaled hash.')
+        try:
+            verify_candidate_zip(path, ready['artifact_sha256'], self.pins)
+        except (zipfile.BadZipFile, zlib.error, EOFError, NotImplementedError, OverflowError) as exc:
+            raise GameJobError('The candidate ZIP is not a valid package: ' + clip(str(exc), 200)) from exc
+        self._intact[run] = key
+
+    def _require_archive(self, run, events, ready, *, cached):
+        """`_verify_archive`; a missing or altered archive of an unproven run is journaled as failed (proven is terminal)."""
+        try:
+            self._verify_archive(run, ready, cached=cached)
+        except Rejected as exc:
+            if events[-1]['state'] != 'proven':
+                self._append(run, 'failed', str(exc))
+            raise
 
     def _work(self, run, facts):
         try:
@@ -813,8 +893,7 @@ class GameJobs:
             self._append(run, 'package', 'Compiled and checked a PE32 GUI program. Assembling the candidate ZIP.', exe)
             ready = self._package(run, facts, exe['artifact_sha256'])
             (self.root / run / EVIDENCE_DIR).mkdir(mode=0o700, exist_ok=True)
-            self._append(run, 'waiting_windows', 'Candidate ready. Waiting for independent Windows qualification; '
-                         'it is not downloadable until a qualification receipt is accepted.', ready)
+            self._append(run, 'built', BUILT_MESSAGE, ready)
         except Exception as exc:
             own = isinstance(exc, (GameJobError, ValueError))
             try:
@@ -856,7 +935,8 @@ class GameJobs:
             'source_manifest_sha256': facts['manifest_sha256'], 'lock_sha256': self.pins.lock_sha256,
             'vendor_tgz_sha256': self.pins.vendor_tgz_sha256, 'recipe_sha256': self.pins.recipe_sha256,
             'artifact_sha256': artifact_sha256, 'original_zip_sha256': self.pins.original_zip_sha256,
-            'data_pk3_sha256': self.pins.pk3_sha256}
+            'data_pk3_sha256': self.pins.pk3_sha256,
+            'verification': 'none: built and structurally checked only; not play-tested and not verified by a person'}
         build_candidate(part, self.release, facts, directory / ARTIFACT, provenance, self.pins)
         with part.open('rb') as written:
             os.fsync(written.fileno())
@@ -868,6 +948,7 @@ class GameJobs:
             os.fsync(dfd)
         finally:
             os.close(dfd)
+        self._intact[run] = _stat_key(final.stat())  # just verified in full above
         return {'zip_sha256': sha256_file(final), 'zip_bytes': final.stat().st_size,
                 'original_exe_sha256': facts['original']['exe_sha256']}
 
@@ -931,20 +1012,22 @@ class GameJobs:
     # ------------------------------------------------------------ qualification
 
     def _settle(self, run, events):
-        """If an acceptable receipt exists, journal `proven`; a fresh mismatching one journals `failed`."""
+        """If an acceptable receipt exists, journal `proven`; a fresh mismatching one journals `failed`.
+
+        Raises Unqualified (no acceptable evidence; the run stays as it was) or Rejected (the run is now failed).
+        """
         ready = self._candidate(events)
-        path = self.root / run / CANDIDATE
-        if path.is_symlink() or not path.is_file() or sha256_file(path) != ready['zip_sha256']:
-            self._append(run, 'failed', 'The candidate ZIP no longer matches its journaled hash.')
-            raise Rejected('The candidate ZIP no longer matches its journaled hash.')
         try:
             proof = self._qualify(run, ready)
         except Rejected as exc:
             self._append(run, 'failed', 'Qualification rejected the candidate: ' + str(exc))
             raise
         try:
-            verify_candidate_zip(path, ready['artifact_sha256'], self.pins)
-        except (GameJobError, zipfile.BadZipFile, OSError) as exc:
+            self._verify_archive(run, ready, cached=False)
+        except Rejected as exc:
+            self._append(run, 'failed', str(exc))
+            raise
+        except GameJobError as exc:
             self._append(run, 'failed', 'The candidate ZIP failed its post-qualification re-check: ' + str(exc))
             raise Rejected('The candidate ZIP failed its post-qualification re-check.') from exc
         self._append(run, 'proven', 'Independent Windows qualification accepted this exact candidate.', {

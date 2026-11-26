@@ -6,51 +6,156 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#fcfdf8">
-  <title>BUILD · Skellywix RE Kit</title>
+  <title>Build · Skellywix RE Kit</title>
   <link rel="stylesheet" href="/desk.css">
   <script src="/game.js" defer></script>
+  <script type="module" src="/projects.js"></script>
 </head>
 
 <body>
-  <a class="skip" href="#main">Skip to rebuild</a>
+  <a class="skip" href="#main">Skip to projects</a>
   <header>
     <div class="bar">
       <h1><span class="mark" aria-hidden="true">RE</span>Skellywix RE Kit</h1>
-      <nav aria-label="Workspace"><a href="#main" aria-current="page">BUILD</a><a id="nav-inspect"
-          href="http://127.0.0.1:48730/index.html" referrerpolicy="no-referrer" hidden>INSPECT</a></nav>
+      <nav aria-label="Workspace"><a href="/" aria-current="page">Build</a><a href="/inspect" data-workspace
+          hidden>Inspect</a>
+        <a href="/reconstruct" data-workspace hidden>Reconstruct</a><a href="/convert" data-workspace hidden>Convert</a>
+        <a href="/runtime" data-workspace hidden>Runtime</a><a href="/releases" data-workspace hidden>Releases</a>
+      </nav>
     </div>
   </header>
   <main id="main" tabindex="-1">
     <div class="intro">
-      <p class="kicker">WINDOWS BUILD</p>
-      <h2>Rebuild Neverball</h2>
-      <p>Choose the original Neverball 1.6.0 Windows ZIP. The builder checks its identity and compiles the licensed Rust
-        port. It never runs the upload.</p>
+      <p class="kicker">LOCAL WORKSPACE / BUILD</p>
+      <h2>Build a project</h2>
+      <p>Choose a toolchain for your source, not a title from a list. Package a site or build a program.
+        For a compiled file without source, use <a href="/inspect" data-workspace hidden>Inspect</a><span
+          id="inspect-fallback">file inspection</span>.
+        A successful build does not establish equivalence to another release.</p>
     </div>
     <div class="panels">
-      <form id="game-form" aria-labelledby="source-heading">
-        <h3 id="source-heading">Build inputs</h3>
-        <label for="game-file">Original app</label>
-        <input id="game-file" name="file" type="file" accept=".zip,application/zip" required
-          aria-describedby="file-hint">
-        <small id="file-hint">Use the original, unmodified Windows ZIP.</small>
-        <label for="game-prompt">Build request</label>
-        <input id="game-prompt" name="request" type="text" maxlength="100" required disabled
-          aria-describedby="request-hint">
-        <small id="request-hint">Only the displayed request is supported.</small>
-        <button class="primary" id="game-start" type="submit" disabled>Rebuild for Windows</button>
-      </form>
-      <section aria-labelledby="game-status-heading">
-        <div class="result-head">
-          <h3 id="game-status-heading">Build status</h3><button id="game-refresh" type="button">Refresh</button>
+      <form id="project-form" aria-labelledby="project-heading">
+        <p class="kicker">01 / INPUT</p>
+        <h3 id="project-heading">Project source</h3>
+        <label for="project-target">Software project</label>
+        <select id="project-target">
+          <option value="">New project</option>
+        </select>
+        <div id="project-name-row">
+          <label for="project-name">Project name (optional)</label>
+          <input id="project-name" maxlength="80" placeholder="Use the source filename">
         </div>
-        <p id="game-status" role="status">Checking the game builder…</p>
-        <p id="game-error" role="alert"></p>
-        <ol id="game-events" aria-label="Run events"></ol>
-        <a id="game-download" class="primary" download="neverball-windows.zip" hidden>Download for Windows</a>
-        <p id="game-receipt"></p>
+        <label for="project-profile">Build profile</label>
+        <select id="project-profile" required aria-describedby="profile-info"></select>
+        <small id="profile-info" role="status">Reading available profiles…</small>
+        <label for="project-input">Source file or project ZIP</label>
+        <input id="project-input" type="file" required aria-describedby="project-input-hint">
+        <small id="project-input-hint">Select a profile to see its accepted input.</small>
+        <p id="project-selection"></p>
+        <button class="primary" id="project-submit" disabled>Build project</button>
+      </form>
+      <section aria-labelledby="result-heading">
+        <div class="result-head">
+          <div>
+            <p class="kicker">02 / OUTPUT</p>
+            <h3 id="result-heading">Build result</h3>
+          </div>
+          <button type="button" id="project-refresh">Refresh</button>
+        </div>
+        <p id="project-status" role="status">No project run selected.</p>
+        <p id="project-error" role="alert"></p>
+        <ol id="project-events" aria-label="Events for this project run"></ol>
+        <a id="project-download" class="primary" hidden>Download artifact</a>
+        <p class="digest" id="project-receipt"></p>
       </section>
     </div>
+    <section class="maintenance" aria-labelledby="history-heading">
+      <div class="result-head">
+        <h3 id="history-heading">Build history and corrections</h3>
+        <button type="button" id="history-refresh">Refresh history</button>
+      </div>
+      <p id="history-message" role="status">Build a project or select a saved project to see its history.</p>
+      <p id="history-error" role="alert"></p>
+      <div id="history-data" hidden>
+        <label for="history-run">Build to review</label>
+        <select id="history-run"></select>
+        <p class="digest" id="history-digests"></p>
+        <a id="history-link">Open this build result</a>
+        <h4>Reported mistakes</h4>
+        <p id="history-empty">No mistakes reported for this project.</p>
+        <ol id="history-issues"></ol>
+        <details id="report-panel" hidden>
+          <summary>Report a mistake in this build</summary>
+          <form id="report-form">
+            <label for="report-expected">What should have happened?</label>
+            <textarea id="report-expected" rows="2" maxlength="1000" required></textarea>
+            <label for="report-observed">What happened instead?</label>
+            <textarea id="report-observed" rows="2" maxlength="1000" required></textarea>
+            <button type="submit">Save mistake report</button>
+          </form>
+        </details>
+        <details id="review-panel" hidden>
+          <summary>Retest a reported mistake on this build</summary>
+          <form id="review-form">
+            <label for="review-issue">Earlier report</label>
+            <select id="review-issue" required></select>
+            <label for="review-outcome">Retest result</label>
+            <select id="review-outcome">
+              <option value="still_open">Still occurs</option>
+              <option value="fixed">Confirmed fixed</option>
+            </select>
+            <label for="review-note">What did you check on this build?</label>
+            <textarea id="review-note" rows="2" maxlength="1000" required></textarea>
+            <button type="submit">Save retest result</button>
+          </form>
+        </details>
+      </div>
+    </section>
+    <section class="maintenance" aria-labelledby="update-heading">
+      <div class="result-head">
+        <div>
+          <p class="kicker">WORKSPACE / MAINTENANCE</p>
+          <h3 id="update-heading">Dependencies</h3>
+        </div>
+        <button type="button" id="update-all">Update all dependencies</button>
+      </div>
+      <p id="update-status" role="status">Checking the installed set…</p>
+      <details>
+        <summary>Component versions and update results</summary>
+        <ul id="update-components"></ul>
+      </details>
+    </section>
+    <details class="specialized" id="windows-profile">
+      <summary>Windows example: Neverball 1.6.0</summary>
+      <p>This example builds the port from its original Windows release. You can download the package without
+        a Windows play test. For other games and applications, use the source builder above.</p>
+      <div class="panels">
+        <form id="game-form" aria-labelledby="source-heading">
+          <h3 id="source-heading">Build inputs</h3>
+          <label for="game-file">Original app</label>
+          <input id="game-file" name="file" type="file" accept=".zip,application/zip" required
+            aria-describedby="file-hint">
+          <small id="file-hint">Use the original, unmodified Windows ZIP.</small>
+          <label for="game-prompt">Build request</label>
+          <input id="game-prompt" name="request" type="text" maxlength="100" required disabled
+            aria-describedby="request-hint">
+          <small id="request-hint">This request belongs to the Neverball compatibility profile only.</small>
+          <button class="primary" id="game-start" type="submit" disabled>Rebuild for Windows</button>
+        </form>
+        <section aria-labelledby="game-status-heading">
+          <div class="result-head">
+            <h3 id="game-status-heading">Neverball run history</h3><button id="game-refresh"
+              type="button">Refresh</button>
+          </div>
+          <p id="game-status" role="status">Checking the game builder…</p>
+          <p id="game-error" role="alert"></p>
+          <ol id="game-events" aria-label="Run events"></ol>
+          <a id="game-download" class="primary" download="neverball-windows.zip" hidden>Download Neverball for
+            Windows</a>
+          <p id="game-receipt"></p>
+        </section>
+      </div>
+    </details>
   </main>
 </body>
 

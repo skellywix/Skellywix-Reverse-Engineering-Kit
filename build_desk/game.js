@@ -1,4 +1,4 @@
-/* Fixed Neverball profile. The server admits the upload and decides whether the download exists. */
+/* Fixed Neverball profile. The server admits the upload and decides whether the download exists and how it is labelled. */
 (() => {
   'use strict';
   const el = id => document.getElementById(id);
@@ -6,14 +6,18 @@
   const start = el('game-start'), refresh = el('game-refresh'), status = el('game-status');
   const error = el('game-error'), events = el('game-events'), download = el('game-download'), receipt = el('game-receipt');
   const validId = /^[a-f0-9]{32}$/, validHash = /^[a-f0-9]{64}$/;
+  const LEGACY_READY = 'Windows candidate built. No play test was recorded at this stage.';
   const url = new URL(location.href);
   let id = url.searchParams.get('game'), request = '', size = 0;
   let timer, version = 0, sending = false, busy = false, eventKey = '';
-  if (url.origin === 'http://127.0.0.1:48784') el('nav-inspect').hidden = false;
+  if (id !== null) el('windows-profile').open = true;
 
   function sync() {
     const selected = file.files[0];
     file.setCustomValidity(selected && selected.size !== size && size ? 'Choose the original Neverball 1.6.0 Windows ZIP.' : '');
+    el('file-hint').textContent = selected && size && selected.size !== size
+      ? `${selected.name} is not the original Neverball 1.6.0 Windows ZIP. Use the project builder for other source or Inspect for binary metadata.`
+      : 'Use the original, unmodified Windows ZIP. A selection does not change the recorded run below.';
     prompt.setCustomValidity(request && prompt.value !== request ? 'Use the supported request: ' + request : '');
     start.disabled = sending || busy || !request || !selected || !file.validity.valid || !prompt.validity.valid;
     refresh.disabled = sending;
@@ -28,6 +32,7 @@
   function pin(run) {
     id = run;
     const next = new URL(location.href);
+    next.searchParams.delete('project');
     next.searchParams.set('game', run);
     history.replaceState(history.state, '', next);
   }
@@ -36,22 +41,30 @@
         || (job.id !== null && !validId.test(job.id)) || (id !== null && job.id !== id)) {
       throw new Error('The desk returned an invalid or different game run.');
     }
-    if (!id && job.id) pin(job.id);
     busy = ['queued', 'build', 'package'].includes(job.state);
     status.textContent = job.state === 'idle' ? 'Ready for the original Windows ZIP.' : job.message;
     const key = JSON.stringify([job.id, job.events]);
     if (key !== eventKey) {
       events.replaceChildren(...job.events.map(entry => {
-        const li = document.createElement('li'); li.textContent = entry.message; return li;
+        const li = document.createElement('li');
+        // Runs journaled before "built" existed carry text saying the download waits for Windows; it no longer does.
+        li.textContent = entry.state === 'waiting_windows' ? LEGACY_READY : entry.message; return li;
       }));
       eventKey = key;
     }
     noDownload();
-    if (job.state === 'proven' && validHash.test(job.verified_sha256) && job.id) {
-      receipt.textContent = 'ZIP SHA-256: ' + job.verified_sha256;
+    const ready = job.download_ready === true && validHash.test(job.download_sha256) && job.id;
+    const verified = ready && job.state === 'proven' && job.play_tested === true && job.verified_sha256 === job.download_sha256;
+    if (verified) {
+      receipt.textContent = `Neverball run ${job.id} · Independent Windows evidence accepted · ZIP SHA-256: ${job.download_sha256}`;
+      download.textContent = 'Download verified Neverball for Windows';
       download.href = '/game/package/' + job.id; download.hidden = false;
-    } else if (job.state === 'waiting_windows') {
-      receipt.textContent = 'Refresh after the Windows play comparison. No download is available yet.';
+    } else if (ready && job.state !== 'proven' && job.verified_sha256 === undefined) {
+      receipt.textContent = `Neverball run ${job.id} · Built, download ready, not play-tested · ZIP SHA-256: ${job.download_sha256}`;
+      download.textContent = 'Download built Neverball for Windows (not play-tested)';
+      download.href = '/game/package/' + job.id; download.hidden = false;
+    } else if (job.download_ready === false && typeof job.download_problem === 'string') {
+      receipt.textContent = 'No download is available for this run: ' + job.download_problem;
     }
     sync();
     if (busy) timer = setTimeout(load, 2400);

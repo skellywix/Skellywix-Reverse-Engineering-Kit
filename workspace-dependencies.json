@@ -1,0 +1,359 @@
+{
+  "schema": 1,
+  "revision": 3,
+  "reviewed": true,
+  "review": {
+    "date": "2026-11-25",
+    "basis": "The checkout specifies publishers and update channels, not the current release. Each install records its exact inputs separately. Fixed compatibility inputs identify a specific qualification contract."
+  },
+  "distribution": {
+    "portable": true,
+    "needs": [
+      "Docker Engine with Linux containers and the Buildx plugin",
+      "Network access to Docker Hub, Debian mirrors, npm, crates.io, and GitHub during an update"
+    ],
+    "never_installed_by_update": [
+      "Operator-supplied inputs (the Fourmilab reference program and the Neverball Windows release): they are verified when present and reported when absent",
+      "CI actions follow their declared major release on GitHub; they are not installed on a workstation",
+      "Host packages: no OS package manager is used on the host"
+    ],
+    "notes": [
+      "Cargo and npm resolve compatible registry releases inside containers. npm lifecycle scripts are disabled. Workspace builds consume the installed set offline.",
+      "The Neverball runner is built locally from a digest-pinned base and a hash-pinned recipe. Its apt layer is version-pinned but not bit-reproducible, so its image ID is recorded at install time instead of being fixed in advance."
+    ]
+  },
+  "components": [
+    {
+      "name": "compiler",
+      "family": "oci-image",
+      "scope": "runtime",
+      "key": "compiler",
+      "version": "Rust stable on Debian bookworm",
+      "repository": "docker.io/library/rust",
+      "tag": "1-slim-bookworm",
+      "track": true,
+      "verify": [
+        {
+          "argv": [
+            "rustc",
+            "--version"
+          ],
+          "expect": "^rustc 1\\."
+        },
+        {
+          "argv": [
+            "cargo",
+            "--version"
+          ],
+          "expect": "^cargo 1\\."
+        }
+      ]
+    },
+    {
+      "name": "native-compiler",
+      "family": "oci-build",
+      "scope": "runtime",
+      "key": "native-compiler",
+      "version": "Debian bookworm C and C++ toolchain",
+      "track": true,
+      "base": {
+        "repository": "docker.io/library/rust",
+        "tag": "1-slim-bookworm"
+      },
+      "recipe": "build_desk/native.Dockerfile",
+      "recipe_sha256": "7cab0ce08b7a495518e48415cd0f72595bf099af3c990c8ce6c99f5eb659809d",
+      "reproducible": false,
+      "verify": [
+        {
+          "argv": [
+            "cc",
+            "--version"
+          ],
+          "expect": "^cc .*\\d+\\."
+        },
+        {
+          "argv": [
+            "c++",
+            "--version"
+          ],
+          "expect": "^c\\+\\+ .*\\d+\\."
+        },
+        {
+          "argv": [
+            "make",
+            "--version"
+          ],
+          "expect": "^GNU Make \\d+\\."
+        },
+        {
+          "argv": [
+            "cmake",
+            "--version"
+          ],
+          "expect": "^cmake version \\d+\\."
+        }
+      ]
+    },
+    {
+      "name": "python",
+      "family": "oci-image",
+      "scope": "runtime",
+      "key": "python",
+      "version": "Python 3 on Debian bookworm",
+      "repository": "docker.io/library/python",
+      "tag": "3-slim-bookworm",
+      "track": true,
+      "verify": [
+        {
+          "argv": [
+            "python3",
+            "--version"
+          ],
+          "expect": "^Python 3\\."
+        }
+      ]
+    },
+    {
+      "name": "node",
+      "family": "oci-image",
+      "scope": "runtime",
+      "key": "node",
+      "version": "Node.js LTS on Debian bookworm",
+      "repository": "docker.io/library/node",
+      "tag": "lts-bookworm-slim",
+      "track": true,
+      "verify": [
+        {
+          "argv": [
+            "node",
+            "--version"
+          ],
+          "expect": "^v[0-9]+\\."
+        },
+        {
+          "argv": [
+            "npm",
+            "--version"
+          ],
+          "expect": "^[0-9]+\\.[0-9]+\\.[0-9]+"
+        }
+      ]
+    },
+    {
+      "name": "inspector-worker",
+      "family": "oci-image",
+      "scope": "runtime",
+      "key": "inspector-worker",
+      "activation": "restart",
+      "version": "Python 3 on Alpine",
+      "note": "The passive inspector worker image. A running inspector keeps the image it started with; restart it to use a new one.",
+      "repository": "docker.io/library/python",
+      "tag": "3-alpine",
+      "track": true,
+      "checkout_pin": {
+        "path": "static-inspection/workbench/worker-image.txt",
+        "text": "python:3-alpine"
+      },
+      "verify": [
+        {
+          "argv": [
+            "python3",
+            "--version"
+          ],
+          "expect": "^Python 3\\."
+        }
+      ]
+    },
+    {
+      "name": "neverball-runner",
+      "family": "oci-build",
+      "scope": "runtime",
+      "optional": true,
+      "key": "neverball-runner",
+      "version": "i686 Windows (MinGW) cross compiler on Rust 1.100.0",
+      "note": "Specialized Neverball Windows compatibility profile. Not the generic compiler. Built locally; the image ID is recorded, not pre-pinned.",
+      "base": {
+        "repository": "docker.io/library/rust",
+        "digest": "sha256:1e626a07e55b67d7fe19de7a590519e0cf4b75cf3788b058fa75cf4d599d9b5a"
+      },
+      "recipe": "examples/neverball/build/windows-i686.Dockerfile",
+      "recipe_sha256": "2c197c6457314572378fee50febe1552cc85cd7ad36144e34645f45a40b3af6f",
+      "source_files": {
+        "examples/neverball/build/miniquad-i686.patch": "47e2b411bfe7261216d0386566cdce1693b78e50e14cf6b129af331bdc72e32b"
+      },
+      "reproducible": false,
+      "verify": [
+        {
+          "argv": [
+            "rustc",
+            "--version"
+          ],
+          "expect": "^rustc 1\\.100\\.0 "
+        },
+        {
+          "argv": [
+            "rustup",
+            "target",
+            "list",
+            "--installed"
+          ],
+          "expect": "i686-pc-windows-gnu"
+        },
+        {
+          "argv": [
+            "i686-w64-mingw32-ld",
+            "--version"
+          ],
+          "expect": "GNU ld"
+        }
+      ]
+    },
+    {
+      "name": "workspace-cargo",
+      "family": "cargo-lock",
+      "scope": "runtime",
+      "version": "Root Cargo workspace lock",
+      "note": "Checksummed crates.io dependencies, resolved into a private lock and vendor directory at update time.",
+      "image": "compiler",
+      "manifest": "Cargo.toml",
+      "manifest_sha256": "6e93bca35d9c225646f4d229fe9ac8608e5f4bb78fedc8ffaf496a1c44a66b9e",
+      "context": ".",
+      "lock": "Cargo.lock",
+      "track": true
+    },
+    {
+      "name": "neverball-core-lock",
+      "family": "cargo-lock",
+      "scope": "runtime",
+      "optional": true,
+      "version": "Neverball core crate lock",
+      "image": "compiler",
+      "manifest": "examples/neverball/Cargo.toml",
+      "context": "examples/neverball",
+      "lock": "examples/neverball/Cargo.lock",
+      "lock_sha256": "3d1ed9103e7a8100aa9f8bbe16808997ab59a4c9c87207b5a269c1f349695d63"
+    },
+    {
+      "name": "neverball-desktop-lock",
+      "family": "cargo-lock",
+      "scope": "runtime",
+      "optional": true,
+      "version": "Neverball desktop crate lock",
+      "image": "compiler",
+      "manifest": "examples/neverball/desktop/Cargo.toml",
+      "context": "examples/neverball",
+      "lock": "examples/neverball/desktop/Cargo.lock",
+      "lock_sha256": "532b4f2870d4b3aa896711bf767d50fb998899adc9c9c7d97251534751b50ac7"
+    },
+    {
+      "name": "frontend",
+      "family": "npm-lock",
+      "scope": "runtime",
+      "activation": "restart",
+      "version": "Frontend npm lock",
+      "note": "Resolve compatible npm versions into a private lock. Lifecycle scripts are disabled.",
+      "image": "node",
+      "manifest": "frontend/package.json",
+      "manifest_sha256": "9f801287294ea41e11462db1abf3009ca2fb8ddbc1f4422b3315d62a69b632a7",
+      "lock": "frontend/package-lock.json",
+      "track": true
+    },
+    {
+      "name": "inspector-ui",
+      "family": "npm-lock",
+      "scope": "runtime",
+      "activation": "restart",
+      "version": "Inspector workbench npm lock",
+      "image": "node",
+      "manifest": "static-inspection/workbench/ui/package.json",
+      "manifest_sha256": "8e1e5eae045d510121d249547ab84e6c7ef1783b446594e762c734512841cf28",
+      "lock": "static-inspection/workbench/ui/package-lock.json",
+      "track": true
+    },
+    {
+      "name": "rea",
+      "family": "reference-archive",
+      "scope": "runtime",
+      "version": "Latest stable REA release",
+      "note": "Only three reference files are retained as data. Nothing from this project is installed, registered, executed, or supplied to a model.",
+      "repository": "morluto/rea",
+      "track": true,
+      "files": [
+        "package.json",
+        "package-lock.json",
+        ".agents/skills/reverse-engineer-anything/SKILL.md"
+      ]
+    },
+    {
+      "name": "decompile",
+      "family": "release-metadata",
+      "scope": "runtime",
+      "version": "Latest stable release",
+      "repository": "1llu50ry/Decompile",
+      "track": true,
+      "note": "Release metadata only. No source, installer, or plugin is downloaded."
+    },
+    {
+      "name": "rust-anything",
+      "family": "release-metadata",
+      "scope": "runtime",
+      "version": "Latest stable release",
+      "repository": "erkamyaman/rust-anything",
+      "track": true,
+      "note": "Release metadata only. No source, installer, or skill is downloaded."
+    },
+    {
+      "name": "fourmilab-workers",
+      "family": "composite",
+      "scope": "runtime",
+      "optional": true,
+      "version": "Fourmilab Base64 1.5 compatibility profile",
+      "note": "The original and the independently provisioned compatibility workers identify the comparison. Updating the workspace is not a qualification result.",
+      "requires": [
+        "python",
+        "compiler",
+        "rea",
+        "fourmilab-reference"
+      ]
+    },
+    {
+      "name": "fourmilab-reference",
+      "family": "operator-asset",
+      "scope": "runtime",
+      "optional": true,
+      "version": "Fourmilab Base64 1.5 reference program",
+      "note": "Supplied by the operator under the workspace data directory; never downloaded by an update.",
+      "path": "fourmilab/reference",
+      "sha256": "0b946702f73b4bc2d478348bc57b5e011a3a02423ca552ae0e2176c9c5f3df22"
+    },
+    {
+      "name": "neverball-original-release",
+      "family": "operator-asset",
+      "scope": "runtime",
+      "optional": true,
+      "version": "Neverball 1.6.0 Windows release",
+      "note": "Supplied by the operator under the workspace data directory; never downloaded by an update.",
+      "path": "neverball/release/original.zip",
+      "sha256": "865391cc041208e526401a8eb1f14fba44323f17d7e818c5e65e82393ff747fb"
+    },
+    {
+      "name": "ci-actions",
+      "family": "ci-actions",
+      "scope": "ci",
+      "version": "GitHub Actions major release channels",
+      "note": "Continuous-integration tooling only. Checked against .github/workflows, never installed.",
+      "workflows": ".github/workflows",
+      "actions": {
+        "actions/checkout": {
+          "ref": "v7"
+        },
+        "actions/setup-python": {
+          "ref": "v7"
+        },
+        "actions/upload-artifact": {
+          "ref": "v7"
+        }
+      }
+    }
+  ]
+}

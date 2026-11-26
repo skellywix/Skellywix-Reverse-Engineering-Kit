@@ -1,0 +1,20 @@
+{
+  "brief": {
+    "samples": [
+      "a"
+    ],
+    "total": 1,
+    "mismatches": 0,
+    "omitted": 0,
+    "events": [
+      {
+        "n": 1,
+        "actor": "skellywix",
+        "check": "identify_file",
+        "slot": "a",
+        "outcome": "unclassified"
+      }
+    ]
+  },
+  "ticket": "private-critic-ticket"
+}

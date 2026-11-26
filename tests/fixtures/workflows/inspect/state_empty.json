@@ -1,0 +1,23 @@
+{
+  "schema": "yuzu.report/1",
+  "revision": 0,
+  "slots": {},
+  "events": [],
+  "earlier_events_omitted": 0,
+  "connection": "off",
+  "remaining": 0,
+  "advisor": {
+    "total": 0,
+    "mismatches": 0,
+    "actors": {
+      "operator": 0,
+      "agent": 0,
+      "skellywix": 0
+    },
+    "skipped": [],
+    "critique": {
+      "status": "idle",
+      "end": 0
+    }
+  }
+}

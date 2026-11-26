@@ -1,0 +1,90 @@
+[
+  {
+    "id": "bad-argument",
+    "held_out": false,
+    "argv": [
+      "--bogus"
+    ],
+    "stdin": {
+      "latin1": ""
+    }
+  },
+  {
+    "id": "crlf-lines",
+    "held_out": false,
+    "argv": [],
+    "stdin": {
+      "latin1": "a\r\nb\r\n"
+    }
+  },
+  {
+    "id": "empty-input",
+    "held_out": false,
+    "argv": [],
+    "stdin": {
+      "latin1": ""
+    }
+  },
+  {
+    "id": "held-01",
+    "held_out": true,
+    "argv": [],
+    "stdin": {
+      "latin1": "\u0000\u00ff\n\u0080\n\n"
+    }
+  },
+  {
+    "id": "held-02",
+    "held_out": true,
+    "argv": [],
+    "stdin": {
+      "repeat_latin1": "\n",
+      "times": 70000
+    }
+  },
+  {
+    "id": "held-03",
+    "held_out": true,
+    "argv": [
+      "a",
+      "b"
+    ],
+    "stdin": {
+      "latin1": "x\n"
+    }
+  },
+  {
+    "id": "held-04",
+    "held_out": true,
+    "argv": [],
+    "stdin": {
+      "repeat_latin1": "x",
+      "times": 70000
+    }
+  },
+  {
+    "id": "held-05",
+    "held_out": true,
+    "argv": [],
+    "stdin": {
+      "repeat_latin1": "ab\n",
+      "times": 30000
+    }
+  },
+  {
+    "id": "no-trailing-newline",
+    "held_out": false,
+    "argv": [],
+    "stdin": {
+      "latin1": "alpha\nbeta"
+    }
+  },
+  {
+    "id": "two-lines",
+    "held_out": false,
+    "argv": [],
+    "stdin": {
+      "latin1": "one\ntwo\n"
+    }
+  }
+]

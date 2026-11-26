@@ -4,13 +4,15 @@ File inspection is the part of Skellywix RE Kit that examines files without runn
 
 ## Start the local desk
 
-On your own **single-user Linux workstation**, use a non-root account with access to Docker Engine, Bash, curl, and the systemd socket tools. From the repository root:
+On your own **single-user Linux workstation**, use a non-root account with access to Docker Engine, Bash, curl, `flock`, and the systemd socket tools. From the repository root:
 
 ```sh
 bash static-inspection/start.sh
 ```
 
-Open the loopback URL the launcher prints. Try two ordinary text files in **COMPARE**. The UI is prebuilt; you don’t need Node.js, an SSH server, a model, or an API key. The first launch downloads the pinned worker image if missing. Later launches can run offline. Press Control-C to stop the desk and discard the case. To use another pair of adjacent local ports, pass the first port, for example `bash static-inspection/start.sh 48900`.
+Open the loopback URL the launcher prints. Try two ordinary text files in **COMPARE**. The UI is prebuilt; you don’t need Node.js, an SSH server, a model, or an API key. The first launch pulls the official Python 3 Alpine image and checks that it can run the inspector’s file digest operation. Later launches use the recorded local image without contacting the registry.
+
+To update the standalone worker, run `bash static-inspection/workbench/worker-image.sh --refresh` from the repository root. A failed pull or check leaves the installed selection unchanged. A successful refresh applies to the next launch, not to an open case. Press Control-C to stop the desk and discard the case. For another pair of adjacent local ports, pass the first port, for example `bash static-inspection/start.sh 48900`.
 
 Don’t start the desk on a shared machine or publish its ports. For a separate Docker host, see [remote access](#remote-access). The standalone CLI below doesn’t need Docker. All commands below this point run from `static-inspection/`.
 
@@ -58,7 +60,6 @@ The [lossless sprite sheet](workbench/ui/public/skelly.webp) has four transparen
 Run the worker on a trusted, single-user Linux Docker host. The checked-in UI is ready to use. If you change its source, rebuild with `(cd workbench/ui && npm ci --ignore-scripts && npm run build)`. See [third-party notices](THIRD-PARTY-NOTICES.txt) for the bundled client.
 
 ```sh
-docker pull "$(cat workbench/worker-image.txt)"
 ipc=$(mktemp -d)
 worker=$(bash workbench/run.sh "$ipc")
 printf 'IPC directory: %s\nWorker: %s\n' "$ipc" "$worker"

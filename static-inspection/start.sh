@@ -17,9 +17,7 @@ for path in /usr/lib/systemd/systemd-socket-proxyd /lib/systemd/systemd-socket-p
 done
 [[ -x $proxy ]] || fail 'Missing prerequisite: systemd-socket-proxyd'
 root=$(cd -- "$(dirname -- "$0")/workbench" && pwd -P)
-IFS= read -r image < "$root/worker-image.txt"
 docker info --format '{{.ServerVersion}}' >/dev/null
-if ! docker image inspect "$image" >/dev/null 2>&1; then docker pull "$image"; fi
 
 umask 077
 ipc=$(mktemp -d)

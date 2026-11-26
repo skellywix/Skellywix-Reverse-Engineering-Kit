@@ -1,0 +1,19 @@
+{
+  "runs": [
+    {
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "status": "verified",
+      "phase": "package"
+    }
+  ],
+  "run": {
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "status": "verified"
+  },
+  "releases": {},
+  "catalog": {},
+  "busy": false,
+  "running": null,
+  "update_error": null,
+  "builder_connected": true
+}
