@@ -1,0 +1,222 @@
+:root {
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+html,
+body,
+#root {
+  min-inline-size: 20rem;
+  min-block-size: 100%;
+  margin: 0;
+  background: var(--color-background-body);
+  color: var(--color-text-primary);
+}
+
+body {
+  min-block-size: 100dvh;
+  overflow: hidden;
+}
+
+button,
+a,
+summary {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline: var(--focus-outline-width, 0.125rem) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset, 0.125rem);
+}
+
+.workspace-shell {
+  min-block-size: 100dvh;
+  background: var(--color-background-body);
+}
+
+.workspace-navigation {
+  block-size: 100%;
+  min-inline-size: 15rem;
+}
+
+.workspace-navigation a,
+.workspace-navigation button,
+.workspace-drawer-navigation a,
+.workspace-drawer-navigation button,
+.skelly-help>summary {
+  min-block-size: 2.75rem;
+}
+
+.workspace-brand-mark {
+  display: block;
+  clip-path: polygon(0 0, calc(100% - var(--spacing-2)) 0, 100% var(--spacing-2), 100% 100%, 0 100%);
+}
+
+.mobile-toolbar {
+  display: flex;
+  min-block-size: 2.75rem;
+  align-items: center;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-4);
+  border-block-end: var(--border-width) solid var(--color-border);
+  background: var(--color-background-surface);
+}
+
+.mobile-toolbar__title {
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-drawer-navigation {
+  display: grid;
+  min-block-size: 100%;
+  grid-template-rows: 1fr auto;
+  gap: var(--spacing-4);
+  padding-block: var(--spacing-3);
+}
+
+
+.page-flow {
+  /* LayoutContent owns the page inset. Nested sections must not bleed into sibling rows. */
+  --container-padding-block-start: initial;
+  --container-padding-block-end: initial;
+  --container-padding-inline-start: initial;
+  --container-padding-inline-end: initial;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--spacing-8);
+  min-inline-size: 0;
+}
+
+.workspace-identity-value {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+  font-family: var(--font-family-code);
+}
+
+.page-header {
+  display: grid;
+  max-inline-size: 48rem;
+  gap: var(--spacing-2);
+}
+
+.page-header h1,
+.page-header p,
+.status-line,
+.skelly-help p {
+  margin: 0;
+}
+
+.primary-action-scope {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-3);
+}
+
+.record-list {
+  display: grid;
+  gap: var(--spacing-3);
+}
+
+.record-list time,
+.record-list code {
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-code);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.status-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-block-size: 2.75rem;
+  color: var(--color-text-secondary);
+}
+
+.status-line__mark {
+  inline-size: 1.25rem;
+  text-align: center;
+}
+
+.status-line__label {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.status-line__value {
+  overflow-wrap: anywhere;
+  font-family: var(--font-family-code);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.status-line[data-tone='signal'],
+.status-line[data-tone='verified'] {
+  color: var(--color-text-accent);
+}
+
+.status-line[data-tone='fault'] {
+  color: var(--color-text-error);
+}
+
+.skelly-help {
+  border-block-start: var(--border-width) solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.skelly-help>summary {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-3);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.skelly-help>summary::-webkit-details-marker {
+  display: none;
+}
+
+.skelly-help__mark {
+  flex: 0 0 auto;
+  clip-path: polygon(0 0, calc(100% - var(--spacing-1)) 0, 100% var(--spacing-1), 100% 100%, 0 100%);
+}
+
+.skelly-help p {
+  padding: 0 var(--spacing-3) var(--spacing-3);
+}
+
+
+@media (min-width: 48rem) {
+  .mobile-toolbar {
+    display: none;
+  }
+}
+
+@media (max-width: 47.999rem) {
+  .workspace-navigation {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}

@@ -142,6 +142,17 @@
   text-wrap: pretty;
 }
 
+/* A focused text field wins. Layout is kept so the overlap check stays stable; speech stays announced. */
+.skelly-pet[data-yield="true"] :is(.skelly-sprite, .skelly-options, .skelly-actions) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.skelly-pet[data-yield="true"] .skelly-bubble {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .skelly-bubble b,
 .skelly-handle {
   display: block;

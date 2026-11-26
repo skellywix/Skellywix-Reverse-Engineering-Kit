@@ -30,11 +30,11 @@
   },
   "case": {
     "inspect": "Header read. Size, format, and fingerprint are in the ledger.",
-    "match": "Hashes match. Keep the source of that reference handy.",
+    "match": "Checksum matches your reference. Keep the source of that reference handy.",
     "mismatch": "Hash mismatch. Save the reference with your notes.",
     "mixed": "This one matches. The earlier mismatch still counts in this case.",
-    "identical": "Same hash on both files. No difference showed up in this check.",
-    "different": "Different builds. The side-by-side shows where.",
+    "identical": "Same SHA-256 on both files. No difference showed up in this check.",
+    "different": "The files differ. The side-by-side shows which fields.",
     "critique": "Second opinion just landed. Check the entries it cites, not the tone.",
     "export": "Evidence exported. Keep the file with your case notes."
   }

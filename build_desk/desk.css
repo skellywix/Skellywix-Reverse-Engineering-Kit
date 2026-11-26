@@ -164,7 +164,8 @@ label {
   font-weight: 600;
 }
 
-input {
+input,
+textarea {
   width: 100%;
   min-width: 0;
   padding: .4rem;
@@ -173,6 +174,34 @@ input {
   background: var(--surface);
   color: var(--ink);
   font: inherit;
+}
+
+textarea {
+  display: block;
+  resize: vertical;
+}
+
+#history-data,
+#history-error {
+  overflow-wrap: anywhere;
+}
+
+#history-error {
+  color: var(--error);
+}
+
+#history-issues li {
+  margin-block: .5rem;
+}
+
+#history-data form {
+  border: 0;
+  padding: 0 0 .8rem;
+  max-width: 62ch;
+}
+
+#history-data form button {
+  margin-top: .7rem;
 }
 
 small {
@@ -236,6 +265,74 @@ button:disabled {
 #game-receipt {
   color: var(--muted);
   font: .84rem/1.5 ui-monospace, monospace;
+}
+
+nav,
+.result-head {
+  flex-wrap: wrap;
+}
+
+.maintenance,
+.specialized {
+  margin-top: 1.2rem;
+}
+
+.maintenance>p,
+.specialized>p,
+#project-status {
+  margin: .65rem 0;
+}
+
+summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 650;
+  padding-block: .35rem;
+}
+
+select {
+  width: 100%;
+  padding: .48rem;
+  border: 1px solid var(--control);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.digest,
+#project-selection,
+#update-components,
+#project-events,
+#project-error {
+  overflow-wrap: anywhere;
+}
+
+.digest {
+  margin-top: .6rem;
+  color: var(--muted);
+  white-space: pre-line;
+  font: .84rem/1.5 ui-monospace, monospace;
+}
+
+#project-error {
+  color: var(--error);
+}
+
+#project-events:empty,
+.digest:empty,
+#project-selection:empty {
+  display: none;
+}
+
+.specialized {
+  padding: .8rem 1rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+#project-selection {
+  margin-top: .6rem;
+  font-weight: 600;
 }
 
 @media (max-width: 46rem) {

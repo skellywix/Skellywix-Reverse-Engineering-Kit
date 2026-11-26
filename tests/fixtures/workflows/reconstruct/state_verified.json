@@ -1,0 +1,188 @@
+{
+  "runs": [
+    {
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "attempt": 1,
+      "status": "verified"
+    }
+  ],
+  "run": {
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "manifest_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+    "manifest": {
+      "reference": "0b946702f73b4bc2d478348bc57b5e011a3a02423ca552ae0e2176c9c5f3df22",
+      "profile": "Fourmilab Base64 1.5, Linux amd64, public domain",
+      "required_cases": 2557,
+      "requested_model": "openai-codex/gpt-6.2-astra",
+      "requested_effort": "medium",
+      "release": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "attempt": 1,
+    "status": "verified",
+    "events": [
+      {
+        "seq": 1,
+        "attempt": 1,
+        "at": "2026-11-24T12:00:00.000+00:00",
+        "stage": "intake",
+        "status": "queued",
+        "detail": {
+          "reason": "Queued on the pinned release."
+        }
+      },
+      {
+        "seq": 2,
+        "attempt": 1,
+        "at": "2026-11-24T12:00:01.000+00:00",
+        "stage": "intake",
+        "status": "running",
+        "detail": {
+          "worker": "File analyst",
+          "deterministic": true
+        }
+      },
+      {
+        "seq": 3,
+        "attempt": 1,
+        "at": "2026-11-24T12:00:02.000+00:00",
+        "stage": "intake",
+        "status": "completed",
+        "detail": {
+          "worker": "File analyst",
+          "deterministic": true
+        }
+      },
+      {
+        "seq": 4,
+        "attempt": 1,
+        "at": "2026-11-24T12:00:03.000+00:00",
+        "stage": "analyze",
+        "status": "running",
+        "detail": {
+          "completed": 0,
+          "required": 2557
+        }
+      },
+      {
+        "seq": 5,
+        "attempt": 1,
+        "at": "2026-11-24T12:00:04.000+00:00",
+        "stage": "analyze",
+        "status": "completed",
+        "detail": {
+          "completed": 2557,
+          "required": 2557
+        }
+      },
+      {
+        "seq": 6,
+        "attempt": 1,
+        "at": "2026-11-24T12:00:05.000+00:00",
+        "stage": "rebuild",
+        "status": "running",
+        "detail": {
+          "generation": 1,
+          "requested_model": "openai-codex/gpt-6.2-astra",
+          "requested_effort": "medium"
+        }
+      },
+      {
+        "seq": 7,
+        "attempt": 1,
+        "at": "2026-11-24T12:00:06.000+00:00",
+        "stage": "rebuild",
+        "status": "completed",
+        "detail": {
+          "generation": 1,
+          "actual_model": "openai-codex/gpt-6.2-astra",
+          "source_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "evidence": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      {
+        "seq": 8,
+        "attempt": 1,
+        "at": "2026-11-24T12:00:07.000+00:00",
+        "stage": "verify",
+        "status": "running",
+        "detail": {
+          "completed": 0,
+          "required": 2557,
+          "generation": 1
+        }
+      },
+      {
+        "seq": 9,
+        "attempt": 1,
+        "at": "2026-11-24T12:00:08.000+00:00",
+        "stage": "verify",
+        "status": "completed",
+        "detail": {
+          "completed": 2557,
+          "required": 2557,
+          "evidence": {
+            "run": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "attempt": 1,
+            "generation": 1,
+            "manifest_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "required": 2557,
+            "matched": 2557,
+            "artifact_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+            "source_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+            "reference_rows_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+            "candidate_rows_sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+          }
+        }
+      },
+      {
+        "seq": 10,
+        "attempt": 1,
+        "at": "2026-11-24T12:00:09.000+00:00",
+        "stage": "package",
+        "status": "verified",
+        "detail": {
+          "completed": 2557,
+          "required": 2557,
+          "package_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+          "evidence": {
+            "run": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "attempt": 1,
+            "generation": 1,
+            "manifest_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "required": 2557,
+            "matched": 2557,
+            "artifact_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+            "source_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+            "reference_rows_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+            "candidate_rows_sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+          }
+        }
+      }
+    ]
+  },
+  "releases": {
+    "active": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "previous": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "staged": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "items": [
+      {
+        "digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "info": {
+          "kit": "7777777777777777777777777777777777777777",
+          "rea": "6.9.0"
+        }
+      }
+    ]
+  },
+  "catalog": [
+    {
+      "role": "Rust builder",
+      "skill": "Fourmilab Base64 compatibility",
+      "scope": "Text-only subscription session; no tools or filesystem."
+    }
+  ],
+  "busy": false,
+  "running": null,
+  "update_error": null,
+  "builder_connected": true
+}

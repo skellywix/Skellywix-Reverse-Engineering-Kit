@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Skellywix RE Kit</title>
+  <link rel="stylesheet" href="desk.css">
+  <script src="app.js" defer></script>
+</head>
+
+<body>
+  <a class="skip" href="#main">Skip to run view</a>
+
+  <header class="top">
+    <div class="top-inner">
+      <div class="identity">
+        <span class="mark" aria-hidden="true">RE</span>
+        <h1>Skellywix RE Kit</h1>
+        <p class="profile">Rebuild profile: Fourmilab Base64 1.5</p>
+      </div>
+      <nav class="workspace-nav" aria-label="Workspace">
+        <a id="nav-team" href="#team" aria-current="page">Team workflow</a>
+        <a id="nav-inspect" href="http://127.0.0.1:48730/index.html" referrerpolicy="no-referrer" hidden>File
+          inspection</a>
+      </nav>
+      <div class="live">
+        <span id="conn" class="conn" data-state="connecting" role="status">Connecting…</span>
+        <small id="updated"></small>
+      </div>
+    </div>
+  </header>
+
+  <div class="page">
+    <div id="alerts" class="alerts" role="alert"></div>
+    <p id="notice" class="notice" role="status"></p>
+
+    <main id="main" class="layout" tabindex="-1">
+      <!-- History: one row per saved run -->
+      <section class="history panel" aria-labelledby="runs-h">
+        <div class="history-head">
+          <h2 id="runs-h">History</h2>
+          <button id="btn-start" type="button" class="primary" aria-describedby="run-hint">Start run</button>
+        </div>
+        <p id="run-hint" class="hint"></p>
+        <ul id="run-list" class="run-list" aria-label="Runs" hidden></ul>
+      </section>
+
+      <!-- Selected run -->
+      <section class="runpane panel" aria-label="Selected run">
+        <div id="zero" class="zero" hidden>
+          <h2>No runs yet</h2>
+          <p>As each run progresses, its steps, workers, and verification results appear here.</p>
+        </div>
+
+        <p id="run-pick" class="pick">Loading run history…</p>
+
+        <div id="run-view" class="run-view" hidden>
+          <!-- 1. What is happening, what comes next, who reported last -->
+          <section class="brief" aria-labelledby="run-h">
+            <div class="brief-head">
+              <h2 id="run-h">Run</h2>
+              <div class="run-actions">
+                <button id="pkg" type="button" class="primary" hidden>Download package</button>
+                <button id="btn-cancel" type="button">Cancel run</button>
+                <button id="btn-retry" type="button">Retry run</button>
+              </div>
+            </div>
+            <p id="run-summary" class="lede"></p>
+            <dl id="counters" class="counters">
+              <div class="counter">
+                <dt>Status</dt>
+                <dd><span id="c-status" class="chip"></span></dd>
+              </div>
+              <div class="counter">
+                <dt>Attempt</dt>
+                <dd id="c-attempt"></dd>
+              </div>
+              <div class="counter wide">
+                <dt>Cases <small id="c-cases-src"></small></dt>
+                <dd><span id="c-cases"></span><progress id="c-cases-bar" max="1" value="0" hidden></progress></dd>
+              </div>
+            </dl>
+            <dl class="brief-lines">
+              <div>
+                <dt>Next</dt>
+                <dd id="run-next"></dd>
+              </div>
+              <div>
+                <dt>Last report</dt>
+                <dd id="r-latest"></dd>
+              </div>
+            </dl>
+          </section>
+
+          <!-- 2. Team workflow: the first view of the selected run, a connected chart of roles and handoffs -->
+          <section id="team" class="run-sec team" aria-labelledby="team-h">
+            <div class="team-head">
+              <h3 id="team-h" class="sub" tabindex="-1">Team workflow</h3>
+              <span id="flow-state" class="role-status flow-state"></span>
+            </div>
+            <p class="note-line">Select a role to read what it recorded for this attempt. Solid arrows are handoffs,
+              dashed lines report to the shared run record, and the Rust builder is the only role that uses a model.</p>
+
+            <div id="flow-board" class="flow-board">
+              <div id="flow-coord" class="flow-node flow-coord">
+                <span class="role-name">Run coordinator</span>
+                <span class="role-kind"><span class="kind-tag" data-kind="det">Deterministic</span> Intake: queues the
+                  attempt and schedules the five steps</span>
+                <span id="map-state" class="role-status"></span>
+              </div>
+
+              <div id="flow-record" class="flow-node flow-record">
+                <span class="role-name">Shared run record</span>
+                <span class="role-kind">Every role reports here. This chart shows only what the record holds.</span>
+                <span id="flow-record-count" class="role-meta"></span>
+                <span id="flow-record-last" class="role-meta"></span>
+              </div>
+
+              <ul id="role-map" class="role-map" role="list" aria-label="Roles in stage order"></ul>
+
+              <div id="flow-resolve" class="flow-node flow-resolve" data-state="idle">
+                <span class="role-name">Resolution</span>
+                <span class="role-kind">A full match, then the Packager records a verified package</span>
+                <span id="flow-resolve-state" class="role-status"></span>
+              </div>
+
+              <!-- Connectors are drawn by CSS and carry no content; the same facts are in #flow-text. -->
+              <div class="link link-h" data-link="dispatch" data-state="idle" aria-hidden="true"></div>
+              <div class="link link-h" data-link="observe" data-state="idle" aria-hidden="true"></div>
+              <div class="link link-h" data-link="build" data-state="idle" aria-hidden="true"></div>
+              <div class="link lane" data-link="compile" data-part="top" data-state="idle" data-retry="idle"
+                aria-hidden="true"></div>
+              <div class="link lane" data-link="compile" data-part="mid" data-state="idle" data-retry="idle"
+                aria-hidden="true"><span class="lane-label">Retry</span></div>
+              <div class="link lane" data-link="compile" data-part="bottom" data-state="idle" data-retry="idle"
+                aria-hidden="true"></div>
+              <div class="link link-h link-w" data-link="verify" data-state="idle" aria-hidden="true"></div>
+              <div class="link link-h link-w" data-link="package" data-state="idle" aria-hidden="true"></div>
+              <div class="link link-h link-w" data-link="resolve" data-state="idle" aria-hidden="true"></div>
+              <div class="link stub stub-down" data-link="stub-coord" data-state="idle" aria-hidden="true"></div>
+              <div class="link stub stub-down" data-link="stub-file" data-state="idle" aria-hidden="true"></div>
+              <div class="link stub stub-down" data-link="stub-behavior" data-state="idle" aria-hidden="true"></div>
+              <div class="link stub stub-down" data-link="stub-builder" data-state="idle" aria-hidden="true"></div>
+              <div class="link stub stub-up" data-link="stub-compiler" data-state="idle" aria-hidden="true"></div>
+              <div class="link stub stub-up" data-link="stub-verifier" data-state="idle" aria-hidden="true"></div>
+              <div class="link stub stub-up" data-link="stub-packager" data-state="idle" aria-hidden="true"></div>
+              <div class="link stub stub-from" data-link="stub-resolve" data-state="idle" aria-hidden="true"></div>
+            </div>
+
+            <ol id="flow-text" class="flow-text" aria-label="Workflow in text"></ol>
+
+            <div class="inspector">
+              <h4 id="inspector-h">Role evidence</h4>
+              <div id="role-detail" role="region" aria-labelledby="inspector-h"></div>
+              <p class="hint inspector-hint">Choose a role in the chart.</p>
+            </div>
+          </section>
+
+          <!-- 3. Five ordered steps -->
+          <section class="run-sec" aria-labelledby="steps-h">
+            <h3 id="steps-h" class="sub">Run steps</h3>
+            <p class="note-line">Rebuild and verification can repeat. The steps show the current attempt.</p>
+            <ol id="step-track" class="rail" aria-labelledby="steps-h"></ol>
+          </section>
+
+          <!-- Run activity and local questions -->
+          <section id="chat" class="run-sec chat" aria-labelledby="chat-h">
+            <h3 id="chat-h" class="sub">Coordinator chat</h3>
+            <p class="note-line">Follow the handoffs, progress reports, and decisions recorded for this attempt.</p>
+            <div class="feed-tools">
+              <span id="feed-state" role="status"></span>
+              <button id="feed-toggle" type="button" aria-controls="feed-log">Pause updates</button>
+              <button id="feed-latest" type="button" aria-controls="feed-log">Jump to latest</button>
+            </div>
+            <ol id="feed-log" role="log" aria-label="Coordinator activity" aria-live="polite" aria-relevant="additions"
+              tabindex="0"></ol>
+            <h4>Ask about this run</h4>
+            <p id="chat-scope" class="note-line">Answers use this attempt’s events. Questions stay in this tab.</p>
+            <div class="q-list" role="group" aria-label="Suggested questions">
+              <button type="button" class="ask" data-question="Who is working?">Who is working?</button>
+              <button type="button" class="ask" data-question="How many cases have been checked?">How many
+                cases?</button>
+              <button type="button" class="ask" data-question="What happens next?">What’s next?</button>
+              <button type="button" class="ask" data-question="Why did this attempt stop?">Why did it stop?</button>
+            </div>
+            <form id="chat-form" class="chat-form" autocomplete="off" novalidate>
+              <label for="chat-question">Your question about the selected run</label>
+              <div class="chat-row">
+                <input id="chat-question" type="text" maxlength="240" autocomplete="off" spellcheck="false"
+                  aria-describedby="chat-scope">
+                <button id="chat-send" type="submit" class="primary">Ask</button>
+                <button id="chat-clear" type="button">Clear Q&amp;A</button>
+              </div>
+            </form>
+            <div class="chat-box">
+              <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-relevant="additions"
+                aria-label="Transcript of questions and answers for the selected run" tabindex="0"></div>
+              <p class="chat-empty">No questions yet. Pick one above or type your own.</p>
+            </div>
+          </section>
+
+          <!-- 5. Technical metadata and the full event ledger, closed until asked for -->
+          <details id="raw-details" class="fold">
+            <summary id="raw-summary">Technical record</summary>
+            <div class="fold-body">
+              <h3 class="sub">Run record</h3>
+              <dl class="meta">
+                <div>
+                  <dt>Run id</dt>
+                  <dd><code id="r-id"></code></dd>
+                </div>
+                <div>
+                  <dt>Manifest hash</dt>
+                  <dd><code id="r-hash" class="digest"></code></dd>
+                </div>
+              </dl>
+              <dl id="counters-raw" class="counters">
+                <div class="counter">
+                  <dt>Stages reached</dt>
+                  <dd id="c-stages"></dd>
+                </div>
+                <div class="counter">
+                  <dt>Events</dt>
+                  <dd id="c-events"></dd>
+                </div>
+              </dl>
+
+              <details id="manifest" class="manifest">
+                <summary>Manifest</summary>
+                <pre id="r-manifest" tabindex="0" aria-label="Manifest JSON"></pre>
+              </details>
+
+              <h3 class="sub">Stage timeline</h3>
+              <p class="note-line">Attempt state only; a stage with no events is shown as “Not started”. Invocations,
+                models and efforts are what one worker invocation reported for that generation, not what the catalog
+                declares; “unknown” means the events did not report it.</p>
+              <ol id="timeline" class="timeline" aria-label="Stages for the current attempt"></ol>
+            </div>
+          </details>
+
+          <details id="events-details" class="fold">
+            <summary><span id="ev-h">Event evidence</span></summary>
+            <div class="fold-body">
+              <div class="filters">
+                <label>Stage <select id="f-stage"></select></label>
+                <label>Status <select id="f-status"></select></label>
+                <label>Attempt <select id="f-attempt"></select></label>
+                <label class="grow">Find <input id="f-q" type="search" placeholder="text in any event field"
+                    autocomplete="off" spellcheck="false"></label>
+                <button id="f-reset" type="button">Reset</button>
+              </div>
+              <p id="f-count" class="hint" role="status"></p>
+
+              <div id="ev-wrap" class="table-wrap" tabindex="0" role="region" aria-labelledby="ev-h"
+                aria-describedby="ev-help">
+                <table id="ev-table" class="ev-table">
+                  <caption class="sr-only">Run events in recorded order. Use the Details button on each row to show
+                    its evidence.</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" class="c-seq">Seq</th>
+                      <th scope="col" class="c-att">Attempt</th>
+                      <th scope="col" class="c-at">Time</th>
+                      <th scope="col" class="c-stage">Stage</th>
+                      <th scope="col" class="c-status">Status</th>
+                      <th scope="col" class="c-sum">Summary</th>
+                      <th scope="col" class="c-ev">Evidence</th>
+                    </tr>
+                  </thead>
+                </table>
+              </div>
+              <p id="ev-help" class="hint">Tab to a Details button; Up and Down arrows move between rows, Home and End
+                jump to the first and last.</p>
+              <p id="ev-empty" class="pick" hidden></p>
+              <div class="toolbar"><button id="ev-more" type="button" hidden>Show earlier events</button></div>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- Release administration and declared catalog, closed until asked for -->
+      <aside class="admin panel" aria-label="Release administration and catalog">
+        <details id="release-details" class="fold">
+          <summary><span id="rel-h">Releases and updates</span></summary>
+          <div class="fold-body">
+            <div id="release-list" class="rel-list"></div>
+            <div class="toolbar">
+              <button id="btn-stage" type="button">Stage update</button>
+              <button id="btn-promote" type="button" class="primary">Promote staged</button>
+              <button id="btn-rollback" type="button">Roll back</button>
+            </div>
+            <p id="release-hint" class="hint"></p>
+            <div id="confirm" class="confirm" role="group" aria-labelledby="confirm-text" hidden>
+              <p id="confirm-text"></p>
+              <div class="toolbar">
+                <button id="confirm-yes" type="button" class="primary">Confirm</button>
+                <button id="confirm-no" type="button">Keep current</button>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details id="catalog-details" class="fold">
+          <summary id="catalog-summary">Catalog</summary>
+          <div class="fold-body">
+            <p class="trust"><strong id="cat-h">Declared assignments only.</strong> They are not evidence that a
+              skill ran; invocations appear solely in run events.</p>
+            <div class="table-wrap short" tabindex="0" role="region" aria-labelledby="cat-h">
+              <table class="cat-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Role</th>
+                    <th scope="col">Skill</th>
+                    <th scope="col">Scope</th>
+                  </tr>
+                </thead>
+                <tbody id="catalog-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </details>
+      </aside>
+    </main>
+  </div>
+</body>
+
+</html>

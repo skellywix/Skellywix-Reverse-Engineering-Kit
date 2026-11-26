@@ -20,6 +20,7 @@ import unittest
 import zipfile
 from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 from build_desk import game_jobs as gj
 
@@ -147,11 +148,29 @@ class Base(unittest.TestCase):
         jobs._thread.join(60)
         return run
 
-    def waiting(self):
+    def built(self):
         jobs = self.make()
         run = self.run_job(jobs)
         view = jobs.status(run)
-        self.assertEqual(view['state'], 'waiting_windows', view['message'])
+        self.assertEqual(view['state'], 'built', view['message'])
+        return jobs, run
+
+    def legacy_waiting(self):
+        """A run journaled before `built` existed: the same candidate, whose last journal entry is `waiting_windows`."""
+        jobs, run = self.built()
+        jobs.close()
+        journal = self.root / run / 'journal.jsonl'
+        lines = journal.read_bytes().split(b'\n')[:-1]
+        entry = json.loads(lines[-1])
+        entry.pop('hash')
+        entry.update(state='waiting_windows', message='Candidate ready. Waiting for independent Windows qualification; '
+                     'it is not downloadable until a qualification receipt is accepted.')
+        entry['hash'] = sha(gj.wire(entry).encode('ascii'))
+        lines[-1] = gj.wire(entry).encode('ascii')
+        os.chmod(journal, 0o600)
+        journal.write_bytes(b'\n'.join(lines) + b'\n')
+        jobs = self.make()
+        self.assertEqual(jobs.status(run)['state'], 'waiting_windows')
         return jobs, run
 
     def receipt(self, jobs, run):
@@ -188,22 +207,33 @@ class Base(unittest.TestCase):
             write(folder / fname, data, 0o600)
         write(jobs.root / run / name, json.dumps(receipt).encode(), mode)
 
-    def check_unqualified(self, jobs, run):
-        with self.assertRaises(gj.Unqualified):
-            jobs.package(run)
+    def assertDownloadable(self, jobs, run, state):
+        """A finished, intact candidate downloads and is labelled built/not play-tested, never verified."""
+        path, digest = jobs.package(run)
+        self.assertEqual(path, self.root / run / gj.CANDIDATE)
+        self.assertEqual(digest, sha(path.read_bytes()))
         view = jobs.status(run)
-        self.assertEqual(view['state'], 'waiting_windows')
+        self.assertEqual((view['state'], view['download_ready'], view['download_sha256']), (state, True, digest))
+        self.assertIs(view['play_tested'], False)
         self.assertNotIn('verified_sha256', view)
+        return view
+
+    def check_unverified(self, jobs, run, state='built'):
+        """Evidence that is absent or unacceptable gates nothing: the run stays downloadable, built and unverified."""
+        return self.assertDownloadable(jobs, run, state)
 
     def check_rejected(self, jobs, run):
         with self.assertRaises(gj.Rejected):
             jobs.package(run)
-        self.assertEqual(jobs.status(run)['state'], 'failed')
+        view = jobs.status(run)
+        self.assertEqual(view['state'], 'failed')
+        self.assertNotIn('download_sha256', view)
+        self.assertNotIn('verified_sha256', view)
         with self.assertRaises(gj.GameJobError):
             jobs.package(run)
 
     def prove(self, mutate=None, files_mutate=None):
-        jobs, run = self.waiting()
+        jobs, run = self.built()
         receipt, files = self.receipt(jobs, run)
         if mutate:
             mutate(receipt)
@@ -344,7 +374,7 @@ class StartCases(Base):
         jobs.gate.set()
         jobs._thread.join(60)
         self.assertFalse(jobs.busy())
-        self.assertEqual(jobs.status(run)['state'], 'waiting_windows')
+        self.assertEqual(jobs.status(run)['state'], 'built')
         self.assertNotEqual(jobs.start(gj.PROMPT, self.pins.original_zip_sha256), run)
 
     def test_second_coordinator_is_excluded(self):
@@ -387,11 +417,11 @@ class StartCases(Base):
 
 
 class PipelineCases(Base):
-    def test_candidate_reaches_waiting_with_pins_and_exact_zip(self):
-        jobs, run = self.waiting()
+    def test_candidate_reaches_built_with_pins_and_exact_zip(self):
+        jobs, run = self.built()
         pe = make_pe(run.encode())
         view = jobs.status(run)
-        self.assertEqual([e['state'] for e in view['events']], ['queued', 'build', 'package', 'waiting_windows'])
+        self.assertEqual([e['state'] for e in view['events']], ['queued', 'build', 'package', 'built'])
         self.assertEqual(view['candidate']['artifact_sha256'], sha(pe))
         archive_path = self.root / run / gj.CANDIDATE
         self.assertEqual(view['candidate']['zip_sha256'], sha(archive_path.read_bytes()))
@@ -417,10 +447,44 @@ class PipelineCases(Base):
         self.assertNotIn(self.fx['exe_sha256'], [sha(archive_path.read_bytes())])
         self.assertNotIn('verified_sha256', view)
         self.assertIn('qualification', view)
+        self.assertEqual((view['download_ready'], view['download_sha256'], view['play_tested']),
+                         (True, view['candidate']['zip_sha256'], False))
 
-    def test_waiting_run_cannot_be_packaged(self):
-        jobs, run = self.waiting()
-        self.check_unqualified(jobs, run)
+    def test_built_run_downloads_without_windows_evidence(self):
+        jobs, run = self.built()
+        view = self.assertDownloadable(jobs, run, 'built')
+        self.assertEqual(view['message'], gj.BUILT_MESSAGE)
+        self.assertIn('not been play-tested', view['message'])
+        self.assertFalse((self.root / run / gj.RECEIPT).exists())
+        self.assertEqual(jobs.package(run), (self.root / run / gj.CANDIDATE, view['download_sha256']))
+
+    def test_older_waiting_run_downloads_and_keeps_its_history(self):
+        jobs, run = self.legacy_waiting()
+        view = self.assertDownloadable(jobs, run, 'waiting_windows')
+        self.assertEqual(view['message'], gj.BUILT_MESSAGE)
+        self.assertIn('not downloadable', view['events'][-1]['message'], 'the recorded journal text is not rewritten')
+
+    def test_provenance_claims_no_verification(self):
+        jobs, run = self.built()
+        with zipfile.ZipFile(self.root / run / gj.CANDIDATE) as archive:
+            provenance = json.loads(archive.read('provenance.json'))
+        self.assertTrue(provenance['verification'].startswith('none'))
+        self.assertIn('not play-tested', provenance['verification'])
+        self.assertFalse([key for key in provenance if 'verified' in key or 'qualif' in key or 'human' in key])
+        self.assertNotIn('verified', json.dumps(provenance).replace('not verified by a person', ''))
+
+    def test_unfinished_run_has_no_package(self):
+        jobs = self.make()
+        jobs.gate = threading.Event()
+        run = jobs.start(gj.PROMPT, self.pins.original_zip_sha256)
+        view = jobs.status(run)
+        self.assertIn(view['state'], ('queued', 'build'))
+        for key in ('download_ready', 'download_sha256', 'verified_sha256'):
+            self.assertNotIn(key, view)
+        with self.assertRaises(gj.GameJobError):
+            jobs.package(run)
+        jobs.gate.set()
+        jobs._thread.join(60)
 
     def test_compiler_failure_is_recorded(self):
         jobs = self.make()
@@ -487,10 +551,81 @@ class PipelineCases(Base):
             jobs.package(run)
         self.assertEqual(jobs.status(run)['state'], 'failed')
 
+    def damages(self):
+        def append(path):
+            os.chmod(path, 0o600)
+            with path.open('ab') as stream:
+                stream.write(b'x')
+
+        def truncate(path):
+            os.chmod(path, 0o600)
+            os.truncate(path, path.stat().st_size // 2)
+
+        def other_zip(path):
+            os.chmod(path, 0o600)
+            with zipfile.ZipFile(path, 'w') as other:
+                other.writestr('neverball.exe', b'another program')
+
+        yield 'appended byte', append
+        yield 'truncated', truncate
+        yield 'replaced by another ZIP', other_zip
+        yield 'removed', lambda path: path.unlink()
+        yield 'replaced by a directory', lambda path: (path.unlink(), path.mkdir())
+
+    def test_wrong_or_missing_zip_is_not_downloaded_when_a_download_is_attempted(self):
+        for label, damage in self.damages():
+            with self.subTest(label):
+                self.setUp()
+                jobs, run = self.built()
+                damage(self.root / run / gj.CANDIDATE)
+                self.check_rejected(jobs, run)
+
+    def test_wrong_or_missing_zip_is_not_offered_by_status(self):
+        for label, damage in self.damages():
+            with self.subTest(label):
+                self.setUp()
+                jobs, run = self.built()
+                damage(self.root / run / gj.CANDIDATE)
+                view = jobs.status(run)
+                self.assertEqual(view['state'], 'failed')
+                for key in ('download_ready', 'download_sha256', 'verified_sha256'):
+                    self.assertNotIn(key, view)
+                with self.assertRaises(gj.GameJobError):
+                    jobs.package(run)
+
+    def test_structurally_invalid_package_is_not_downloaded_or_offered(self):
+        jobs, run = self.built()
+        jobs._intact.clear()
+        invalid = gj.GameJobError('The candidate ZIP lacks provenance.json.')
+        with mock.patch.object(gj, 'verify_candidate_zip', side_effect=invalid):
+            with self.assertRaises(gj.GameJobError):
+                jobs.package(run)
+            view = jobs.status(run)
+        self.assertEqual(view['state'], 'built', 'the bytes match the journal, so nothing is recorded as failed')
+        self.assertIs(view['download_ready'], False)
+        self.assertIn('lacks provenance', view['download_problem'])
+        for key in ('download_sha256', 'verified_sha256'):
+            self.assertNotIn(key, view)
+        self.assertIs(jobs.status(run)['download_ready'], True)
+
+    def test_status_polling_does_not_rehash_the_archive(self):
+        jobs, run = self.built()
+        with mock.patch.object(gj, 'sha256_file', wraps=gj.sha256_file) as hashed:
+            for _ in range(5):
+                self.assertIs(jobs.status(run)['download_ready'], True)
+            self.assertEqual(hashed.call_count, 0, 'the archive was checked in full when it was packaged')
+            jobs.close()
+            again = self.make(NoDockerJobs)
+            for _ in range(5):
+                self.assertIs(again.status(run)['download_ready'], True)
+            self.assertEqual(hashed.call_count, 1, 'first sight after a restart is one full check')
+            again.package(run)
+            self.assertEqual(hashed.call_count, 2, 'a download is always checked in full')
+
 
 class JournalCases(Base):
     def test_hash_chain_detects_edits(self):
-        jobs, run = self.waiting()
+        jobs, run = self.built()
         journal = self.root / run / 'journal.jsonl'
         os.chmod(journal, 0o600)
         text = journal.read_text().replace('Compiling', 'Compilinq', 1)
@@ -512,11 +647,27 @@ class JournalCases(Base):
         self.assertEqual(journal.stat().st_size, committed)
 
     def test_transition_order_is_enforced(self):
-        jobs, run = self.waiting()
+        jobs, run = self.built()
         with self.assertRaises(gj.GameJobError):
             jobs._append(run, 'package', 'again')
         with self.assertRaises(gj.GameJobError):
             jobs._append(run, 'queued', 'again')
+        with self.assertRaises(gj.GameJobError):
+            jobs._append(run, 'built', 'again')
+        with self.assertRaises(gj.GameJobError):
+            jobs._append(run, 'waiting_windows', 'again')
+
+    def test_tampered_journal_never_downloads(self):
+        jobs, run = self.built()
+        journal = self.root / run / 'journal.jsonl'
+        os.chmod(journal, 0o600)
+        journal.write_text(journal.read_text().replace('"state":"built"', '"state":"proven"'))
+        view = jobs.status(run)
+        self.assertEqual(view['state'], 'failed')
+        for key in ('download_ready', 'download_sha256', 'verified_sha256'):
+            self.assertNotIn(key, view)
+        with self.assertRaises(gj.JournalError):
+            jobs.package(run)
 
 
 class RecoveryCases(Base):
@@ -547,22 +698,29 @@ class RecoveryCases(Base):
         path, digest = again.package(run)
         self.assertEqual(digest, sha(path.read_bytes()))
 
-    def test_waiting_survives_restart_and_stays_unproven(self):
-        jobs, run = self.waiting()
+    def test_built_survives_restart_stays_downloadable_and_unverified(self):
+        jobs, run = self.built()
+        jobs.close()
+        again = self.make(NoDockerJobs)
+        self.assertEqual(again.status(run)['state'], 'built')
+        self.check_unverified(again, run)
+
+    def test_older_waiting_run_survives_restart_downloadable_and_unverified(self):
+        jobs, run = self.legacy_waiting()
         jobs.close()
         again = self.make(NoDockerJobs)
         self.assertEqual(again.status(run)['state'], 'waiting_windows')
-        self.check_unqualified(again, run)
+        self.check_unverified(again, run, 'waiting_windows')
 
 
 class ReceiptCases(Base):
     def test_cannot_skip_live_play_audio_or_persistence(self):
-        jobs, run = self.waiting()
+        jobs, run = self.built()
         required = {'startup_menu', 'level_load', 'level_catalog', 'coin_collection', 'goal_completion',
                     'timeout_failure', 'fall_out_failure', 'recorded_replay', 'pause_resume',
                     'challenge_progress', 'score_after_relaunch', 'audio_output', 'ball_motion', 'camera_motion'}
         self.assertEqual(required, {case.name for case in gj.REQUIRED})
-        self.check_unqualified(jobs, run)
+        self.check_unverified(jobs, run)
 
     def test_valid_receipt_releases_exactly_the_candidate(self):
         jobs, run = self.prove()
@@ -573,6 +731,7 @@ class ReceiptCases(Base):
         self.assertEqual(view['state'], 'proven')
         self.assertEqual(view['verified_sha256'], digest)
         self.assertEqual(view['events'][-1]['data']['artifact_sha256'], view['candidate']['artifact_sha256'])
+        self.assertEqual((view['download_sha256'], view['play_tested']), (digest, True))
         self.assertEqual(len(view['events'][-1]['data']['evidence_sha256']), 2 * len(gj.REQUIRED))
         self.assertEqual(jobs.package(run), (path, digest))
 
@@ -581,8 +740,39 @@ class ReceiptCases(Base):
         self.assertEqual(jobs.status(run)['state'], 'proven')
 
     def test_no_receipt(self):
-        jobs, run = self.waiting()
-        self.check_unqualified(jobs, run)
+        jobs, run = self.built()
+        self.check_unverified(jobs, run)
+
+    def test_older_waiting_run_still_accepts_its_receipt(self):
+        jobs, run = self.legacy_waiting()
+        receipt, files = self.receipt(jobs, run)
+        self.install(jobs, run, receipt, files)
+        path, digest = jobs.package(run)
+        view = jobs.status(run)
+        self.assertEqual((view['state'], view['verified_sha256'], view['download_sha256']), ('proven', digest, digest))
+        self.assertEqual([e['state'] for e in view['events']][-2:], ['waiting_windows', 'proven'])
+
+    def test_older_waiting_run_with_disagreeing_evidence_fails(self):
+        jobs, run = self.legacy_waiting()
+        receipt, files = self.receipt(jobs, run)
+        receipt['checks'][3]['candidate']['outcome'] = 'goal_completion: observed state 1 of 4'
+        self.install(jobs, run, receipt, files)
+        self.check_rejected(jobs, run)
+
+    def test_pending_evidence_is_reported_without_blocking_the_download(self):
+        jobs, run = self.built()
+        write(self.root / run / gj.RECEIPT, b'not json', 0o600)
+        view = self.check_unverified(jobs, run)
+        self.assertIn('not strict JSON', view['qualification_pending'])
+
+    def test_evidence_does_not_change_the_package_bytes(self):
+        jobs, run = self.built()
+        before = jobs.package(run)
+        receipt, files = self.receipt(jobs, run)
+        self.install(jobs, run, receipt, files)
+        after = jobs.package(run)
+        self.assertEqual(before, after)
+        self.assertEqual(jobs.status(run)['verified_sha256'], after[1])
 
     def top_mutations(self):
         yield 'run', lambda r: r.update(run='f' * 32)
@@ -623,26 +813,26 @@ class ReceiptCases(Base):
             with self.subTest(label):
                 self.setUp()
                 jobs, run = self.prove(mutate)
-                self.check_unqualified(jobs, run)
+                self.check_unverified(jobs, run)
 
     def test_empty_evidence(self):
-        jobs, run = self.waiting()
+        jobs, run = self.built()
         receipt, files = self.receipt(jobs, run)
         name = receipt['checks'][0]['original']['evidence']
         files[name] = b''
         receipt['checks'][0]['original']['evidence_sha256'] = sha(b'')
         self.install(jobs, run, receipt, files)
-        self.check_unqualified(jobs, run)
+        self.check_unverified(jobs, run)
 
     def test_evidence_hash_mismatch(self):
         jobs, run = self.prove(files_mutate=lambda f: f.__setitem__(next(iter(f)), b'run mentioned elsewhere\n'))
-        self.check_unqualified(jobs, run)
+        self.check_unverified(jobs, run)
 
     def test_evidence_from_another_run_or_executable(self):
         for needle in ('run', 'subject', 'binding'):
             with self.subTest(needle):
                 self.setUp()
-                jobs, run = self.waiting()
+                jobs, run = self.built()
                 receipt, files = self.receipt(jobs, run)
                 name = receipt['checks'][0]['candidate']['evidence']
                 cand = receipt['checks'][0]['candidate']
@@ -650,39 +840,39 @@ class ReceiptCases(Base):
                 files[name] = files[name].replace(token.encode(), b'0' * 64 if needle != 'run' else b'0' * 32)
                 cand['evidence_sha256'] = sha(files[name])
                 self.install(jobs, run, receipt, files)
-                self.check_unqualified(jobs, run)
+                self.check_unverified(jobs, run)
 
     def test_duplicate_evidence_content(self):
-        jobs, run = self.waiting()
+        jobs, run = self.built()
         receipt, files = self.receipt(jobs, run)
         first, second = receipt['checks'][0], receipt['checks'][1]
         files[second['original']['evidence']] = files[first['original']['evidence']]
         second['original']['evidence_sha256'] = first['original']['evidence_sha256']
         self.install(jobs, run, receipt, files)
-        self.check_unqualified(jobs, run)
+        self.check_unverified(jobs, run)
 
     def test_stale_evidence(self):
-        jobs, run = self.waiting()
+        jobs, run = self.built()
         receipt, files = self.receipt(jobs, run)
         self.install(jobs, run, receipt, files)
         stale = time.time_ns() - 3600 * 10**9
         old = jobs.evidence_dir(run) / receipt['checks'][0]['original']['evidence']
         os.utime(old, ns=(stale, stale))
-        self.check_unqualified(jobs, run)
+        self.check_unverified(jobs, run)
 
     def test_stale_receipt(self):
-        jobs, run = self.waiting()
+        jobs, run = self.built()
         receipt, files = self.receipt(jobs, run)
         self.install(jobs, run, receipt, files)
         stale = time.time_ns() - 3600 * 10**9
         os.utime(self.root / run / gj.RECEIPT, ns=(stale, stale))
-        self.check_unqualified(jobs, run)
+        self.check_unverified(jobs, run)
 
     def test_receipt_file_hygiene(self):
         for label in ('symlink', 'group writable', 'world writable', 'empty', 'directory'):
             with self.subTest(label):
                 self.setUp()
-                jobs, run = self.waiting()
+                jobs, run = self.built()
                 receipt, files = self.receipt(jobs, run)
                 target = self.root / run / gj.RECEIPT
                 if label == 'symlink':
@@ -696,16 +886,16 @@ class ReceiptCases(Base):
                     target.write_bytes(b'')
                 else:
                     self.install(jobs, run, receipt, files, mode=0o664 if label == 'group writable' else 0o666)
-                self.check_unqualified(jobs, run)
+                self.check_unverified(jobs, run)
 
     def test_non_strict_json(self):
         for label, text in {'duplicate key': '{"version":1,"version":1}', 'nan': '{"version":NaN}', 'array': '[]',
                             'garbage': 'not json'}.items():
             with self.subTest(label):
                 self.setUp()
-                jobs, run = self.waiting()
+                jobs, run = self.built()
                 write(self.root / run / gj.RECEIPT, text.encode(), 0o600)
-                self.check_unqualified(jobs, run)
+                self.check_unverified(jobs, run)
 
     def test_receipt_replayed_from_a_proven_run_is_refused(self):
         jobs, first = self.prove()
@@ -714,7 +904,7 @@ class ReceiptCases(Base):
         jobs._thread.join(60)
         shutil.copytree(jobs.evidence_dir(first), jobs.evidence_dir(second), dirs_exist_ok=True)
         shutil.copy(self.root / first / gj.RECEIPT, self.root / second / gj.RECEIPT)
-        self.check_unqualified(jobs, second)
+        self.check_unverified(jobs, second)
 
     def test_discrete_disagreement_fails_the_candidate(self):
         def mutate(receipt, files=None):
@@ -749,7 +939,7 @@ class ReceiptCases(Base):
         self.assertEqual(len(set(names)), len(names))
         self.assertIn('continuous', {c['kind'] for c in contract['checks']})
         self.assertIn('discrete', {c['kind'] for c in contract['checks']})
-        jobs, run = self.waiting()
+        jobs, run = self.built()
         self.assertEqual(jobs.status(run)['qualification'], contract)
         self.assertEqual(jobs.receipt_path(run), self.root / run / 'qualification.json')
 

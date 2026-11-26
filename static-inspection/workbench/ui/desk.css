@@ -431,6 +431,46 @@ footer {
   font-size: .84rem;
 }
 
+.file-state {
+  margin-top: 4px;
+  font-size: .88rem;
+  color: var(--dim);
+}
+
+.file-name {
+  color: var(--ink);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.scope-note,
+.names,
+.ledger-actors {
+  color: var(--dim);
+  font-size: .88rem;
+}
+
+.guard {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--control);
+  border-left: 3px solid var(--amber);
+  background: var(--warn-wash);
+}
+
+.guard p {
+  margin-top: 4px;
+}
+
+.guard .actions {
+  margin-top: 8px;
+}
+
+.guard .danger:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
 .upload {
   display: flex;
   gap: 10px;

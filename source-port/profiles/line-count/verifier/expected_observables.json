@@ -1,0 +1,72 @@
+[
+  {
+    "id": "bad-argument",
+    "held_out": false,
+    "exit": 2,
+    "stdout_latin1": "",
+    "stderr_latin1": "usage: line-count\n"
+  },
+  {
+    "id": "crlf-lines",
+    "held_out": false,
+    "exit": 0,
+    "stdout_latin1": "2\n",
+    "stderr_latin1": ""
+  },
+  {
+    "id": "empty-input",
+    "held_out": false,
+    "exit": 0,
+    "stdout_latin1": "0\n",
+    "stderr_latin1": ""
+  },
+  {
+    "id": "held-01",
+    "held_out": true,
+    "exit": 0,
+    "stdout_latin1": "3\n",
+    "stderr_latin1": ""
+  },
+  {
+    "id": "held-02",
+    "held_out": true,
+    "exit": 0,
+    "stdout_latin1": "70000\n",
+    "stderr_latin1": ""
+  },
+  {
+    "id": "held-03",
+    "held_out": true,
+    "exit": 2,
+    "stdout_latin1": "",
+    "stderr_latin1": "usage: line-count\n"
+  },
+  {
+    "id": "held-04",
+    "held_out": true,
+    "exit": 0,
+    "stdout_latin1": "0\n",
+    "stderr_latin1": ""
+  },
+  {
+    "id": "held-05",
+    "held_out": true,
+    "exit": 0,
+    "stdout_latin1": "30000\n",
+    "stderr_latin1": ""
+  },
+  {
+    "id": "no-trailing-newline",
+    "held_out": false,
+    "exit": 0,
+    "stdout_latin1": "1\n",
+    "stderr_latin1": ""
+  },
+  {
+    "id": "two-lines",
+    "held_out": false,
+    "exit": 0,
+    "stdout_latin1": "2\n",
+    "stderr_latin1": ""
+  }
+]

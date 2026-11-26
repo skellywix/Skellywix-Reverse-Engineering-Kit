@@ -1,0 +1,45 @@
+[package]
+name = "re-kit-workspace"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "re_kit_workspace"
+path = "src/lib.rs"
+
+[[bin]]
+name = "re-kit-workspace"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8.9"
+futures = "0.3.34"
+hex = "0.4.3"
+http-body-util = "0.1.5"
+hyper = { version = "1.13.0", features = ["client", "http1"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+sqlx = { version = "0.8.6", default-features = false, features = ["macros", "migrate", "runtime-tokio", "sqlite"] }
+thiserror = "2.0.21"
+time = "0.3.55"
+tokio = { version = "1.54.1", features = ["full"] }
+tokio-stream = "0.1.19"
+tower-http = "0.7.1"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
+uuid = "1.29.3"
+
+[dev-dependencies]
+tower = "0.5.3"
+
+[lints.clippy]
+expect_used = "deny"
+unwrap_used = "deny"
+
+[lints.rust]
+unsafe_code = "forbid"

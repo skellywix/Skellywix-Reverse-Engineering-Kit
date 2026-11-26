@@ -1,7 +1,6 @@
 """Stage published dependency candidates for the active Skellywix RE Kit inputs."""
 
 import argparse
-import base64
 import hashlib
 import json
 import re
@@ -23,7 +22,9 @@ REA_TAG = re.compile(r"rea-agents-([0-9]+\.[0-9]+\.[0-9]+)")
 REA_SKILL = ".agents/skills/reverse-engineer-anything/SKILL.md"
 ROOT = Path(__file__).resolve().parents[1]
 METADATA_LIMIT = 8 * 1024**2
-REA_BASELINE_VERSION = (6, 10, 1)
+REFERENCE_REPOSITORIES = {"decompile": "1llu50ry/Decompile", "rust-anything": "erkamyaman/rust-anything"}
+REA_FILES = ("package.json", "package-lock.json", REA_SKILL)
+VERSION_TAG = re.compile(r"v([0-9]+\.[0-9]+\.[0-9]+)")
 ARCHIVE_LIMIT = 2 * 1024**3
 HOSTS = frozenset({
     "api.github.com", "raw.githubusercontent.com", "github.com",
@@ -77,20 +78,14 @@ def stable(version):
     return tuple(map(int, version.split(".")))
 
 
-def npm_tarball(package, metadata, scratch, fetch):
-    version = metadata["version"]
-    stable(version)
-    dist = metadata["dist"]
-    url = f"{NPM}/{package}/-/{package}-{version}.tgz"
-    if metadata.get("name") != package or dist["tarball"] != url:
-        raise ValueError("npm package identity or tarball origin mismatch")
-    path = scratch / "package.tgz"
-    digest = fetch(url, path, ARCHIVE_LIMIT)
-    with path.open("rb") as content:
-        integrity = base64.b64encode(hashlib.file_digest(content, "sha512").digest()).decode()
-    if dist["integrity"] != "sha512-" + integrity:
-        raise ValueError("npm tarball integrity mismatch")
-    return {"url": url, "sha256": digest}
+def stable_release(repository, scratch, fetch):
+    data = read_json(f"{GITHUB}/repos/{repository}/releases/latest", scratch, fetch)
+    tag = data.get("tag_name") if isinstance(data, dict) else None
+    pattern = REA_TAG if repository == REA_REPOSITORY else VERSION_TAG
+    match = pattern.fullmatch(tag) if isinstance(tag, str) else None
+    if not match or data.get("draft") is not False or data.get("prerelease") is not False:
+        raise ValueError(f"expected a stable GitHub release for {repository}")
+    return tag, match[1]
 
 
 def tar_members(path, names, *, source_root=None):
@@ -149,12 +144,7 @@ def release_commit(repository, tag, scratch, fetch):
 
 
 def stage_rea(scratch, current, fetch=download):
-    release = read_json(f"{GITHUB}/repos/{REA_REPOSITORY}/releases/latest", scratch, fetch)
-    tag = release.get("tag_name", "")
-    match = REA_TAG.fullmatch(tag)
-    if not match or release.get("draft") is not False or release.get("prerelease") is not False:
-        raise ValueError("expected a stable GitHub release for rea-agents")
-    version = match[1]
+    tag, version = stable_release(REA_REPOSITORY, scratch, fetch)
     if stable(version) <= current:
         return None
 
@@ -192,36 +182,23 @@ def run(command, cwd=None):
     return result.stdout.strip()
 
 
-def stage_ui(scratch):
-    ui = ROOT / "static-inspection/workbench/ui"
+def stage_ui(scratch, directory):
+    ui = ROOT / directory
     manifest = json.loads((ui / "package.json").read_bytes())
-    candidates = {}
-    for group in ("dependencies", "devDependencies"):
-        for package, current in manifest[group].items():
-            metadata = read_json(f"{NPM}/{package}/latest", scratch, download)
-            version = metadata["version"]
-            if stable(version) > stable(current):
-                candidates[package] = {"version": version, **npm_tarball(package, metadata, scratch, download)}
-                manifest[group][package] = version
-    if manifest["dependencies"]["react"] != manifest["dependencies"]["react-dom"]:
-        raise ValueError("React and React DOM must be staged at the same version")
     npm = shutil.which("npm")
     if not npm:
         raise ValueError("npm is required to stage an updated workbench lock")
     previous_lock = json.loads((ui / "package-lock.json").read_bytes())
-    validate_npm_lock(previous_lock, json.loads((ui / "package.json").read_bytes()))
+    validate_npm_lock(previous_lock, manifest)
     (scratch / "package.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    shutil.copyfile(ui / "package-lock.json", scratch / "package-lock.json")
     flags = ["--ignore-scripts", "--no-audit", "--no-fund", f"--registry={NPM}"]
-    run([npm, "update", "--package-lock-only", *flags], cwd=scratch)
+    run([npm, "install", "--package-lock-only", *flags], cwd=scratch)
     lock = json.loads((scratch / "package-lock.json").read_bytes())
     validate_npm_lock(lock, manifest)
-    if lock["packages"][""].get("devDependencies") != manifest["devDependencies"]:
-        raise ValueError("workbench lock is missing its proposed development pins")
-    if not candidates and lock["packages"] == previous_lock["packages"]:
+    if lock["packages"] == previous_lock["packages"]:
         return None
     run([npm, "ci", *flags], cwd=scratch)
-    return {"downloads": candidates, "manifest": manifest, "lock": lock}
+    return {"manifest": manifest, "lock": lock}
 
 
 def stage_image(_scratch, image, candidate_tag=None):
@@ -236,34 +213,34 @@ def stage_image(_scratch, image, candidate_tag=None):
     return {"previous": image, "candidate": f"{tag}@{digest}"}
 
 
-def stage_action(scratch, repository, pinned):
-    # Some actions publish major-version aliases which move independently of releases.
-    release = read_json(f"{GITHUB}/repos/{repository}/releases/latest", scratch, download)
-    tag = release["tag_name"]
-    stable(tag.removeprefix("v"))
-    commit = release_commit(repository, tag, scratch, download)
-    if commit == pinned:
-        return None
-    url = f"https://codeload.github.com/{repository}/tar.gz/{commit}"
-    return {"tag": tag, "previous": pinned, "commit": commit,
-            "source": {"url": url, "sha256": download(url, scratch / "source.tgz", ARCHIVE_LIMIT)}}
+def stage_release(scratch, repository):
+    tag, _ = stable_release(repository, scratch, download)
+    return {"tag": tag, "commit": release_commit(repository, tag, scratch, download)}
+
+
+def stage_action(scratch, repository, channel):
+    return {"channel": channel, "commit": release_commit(repository, channel, scratch, download)}
 
 
 def sources():
-    yield "rea-agents", stage_rea, (REA_BASELINE_VERSION,)
-    yield "workbench-ui", stage_ui, ()
-
-    worker_image = (ROOT / "static-inspection/workbench/worker-image.txt").read_text(encoding="utf-8").strip()
-    yield worker_image.split("@", 1)[0], stage_image, (worker_image,)
-
-    actions = {}
-    for file in sorted((ROOT / ".github/workflows").glob("*.yml")):
-        contents = file.read_text(encoding="utf-8")
-        for repository, pin in re.findall(
-                r"^\s+uses: ([^/]+/[^@]+)@([0-9a-f]{40})(?:\s|$)", contents, re.M):
-            actions[repository, pin] = None
-    for repository, pin in actions:
-        yield f"action:{repository}@{pin[:8]}", stage_action, (repository, pin)
+    policy = json.loads((ROOT / "workspace-dependencies.json").read_bytes())
+    for item in policy["components"]:
+        family = item["family"]
+        if family == "ci-actions":
+            for repository, source in item["actions"].items():
+                ref = source["ref"]
+                yield f"action:{repository}@{ref}", stage_action, (repository, ref)
+        if not item.get("track"):
+            continue
+        if family in ("reference-archive", "release-metadata"):
+            if item["repository"] not in (REA_REPOSITORY, *REFERENCE_REPOSITORIES.values()):
+                raise ValueError("unknown tracked reference repository")
+            yield item["name"], stage_release, (item["repository"],)
+        elif family == "npm-lock":
+            yield item["name"], stage_ui, (str(Path(item["manifest"]).parent),)
+        elif family == "oci-image":
+            tag = f"{item['repository']}:{item['tag']}"
+            yield tag, stage_image, (tag,)
 
 
 def main():

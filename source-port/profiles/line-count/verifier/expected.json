@@ -1,0 +1,52 @@
+[
+  {
+    "id": "bad-argument",
+    "held_out": false,
+    "expected_sha256": "4102ea89985e1365e9f62daadbaf4dd93aa105006f5d8356e8f44df2619a5cbc"
+  },
+  {
+    "id": "crlf-lines",
+    "held_out": false,
+    "expected_sha256": "9bad018711f111ed1d3d2bf456a04ed1ff26e45110964a1efc0d47057fb1e27b"
+  },
+  {
+    "id": "empty-input",
+    "held_out": false,
+    "expected_sha256": "1124259979ee6a8ed5c1ec1023647f2ed9929f5fb6eff429168a853fe9db7a1e"
+  },
+  {
+    "id": "held-01",
+    "held_out": true,
+    "expected_sha256": "a252615d087dc06057ada67e6ee117588eb7f817c3578af939f31c49a8d02c4c"
+  },
+  {
+    "id": "held-02",
+    "held_out": true,
+    "expected_sha256": "c84d56c3ba5df5fd0abe0a5c4759738bf0a15871d312b65c259e21ad96cf8ede"
+  },
+  {
+    "id": "held-03",
+    "held_out": true,
+    "expected_sha256": "4102ea89985e1365e9f62daadbaf4dd93aa105006f5d8356e8f44df2619a5cbc"
+  },
+  {
+    "id": "held-04",
+    "held_out": true,
+    "expected_sha256": "1124259979ee6a8ed5c1ec1023647f2ed9929f5fb6eff429168a853fe9db7a1e"
+  },
+  {
+    "id": "held-05",
+    "held_out": true,
+    "expected_sha256": "5488baf5160905f7a0ea2f0bb3cd183e7daa743df86b433a4fe546f21268cd83"
+  },
+  {
+    "id": "no-trailing-newline",
+    "held_out": false,
+    "expected_sha256": "d1d677eb582bbf53774d60b6dcb2ac7404c0e4e75b04dcfe6d46964dc3a12d26"
+  },
+  {
+    "id": "two-lines",
+    "held_out": false,
+    "expected_sha256": "9bad018711f111ed1d3d2bf456a04ed1ff26e45110964a1efc0d47057fb1e27b"
+  }
+]

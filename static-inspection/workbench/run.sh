@@ -16,7 +16,7 @@ if [[ ! -f $root/ui/dist/index.html || ! -r $root/ui/dist/skelly.webp || ! -r $r
   printf 'Build the UI first: npm ci --ignore-scripts and npm run build in workbench/ui.\n' >&2
   exit 2
 fi
-IFS= read -r image < "$root/worker-image.txt"
+image=$(bash "$root/worker-image.sh")
 mounts=(--mount "type=bind,src=$ipc,dst=/ipc" --mount "type=bind,src=$root/ui/dist,dst=/desk,readonly")
 for file in server.py protocol.py case_state.py evidence.py; do
   mounts+=(--mount "type=bind,src=$root/$file,dst=/app/$file,readonly")

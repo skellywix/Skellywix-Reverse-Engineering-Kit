@@ -4,6 +4,8 @@ import './skelly.css';
 
 const corners = ['bottom-right', 'bottom-left', 'top-left', 'top-right'];
 const bubbleDuration = 8000;
+const fieldSelector = 'input:not([type="checkbox"],[type="radio"],[type="button"],[type="submit"],[type="reset"],[type="range"],[type="color"]), textarea, select, [contenteditable]:not([contenteditable="false"])';
+const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 
 function findingLine(tool, matches, identical) {
   if (tool === 'identify_file') return voice.case.inspect;
@@ -21,6 +23,7 @@ export default function Skelly({ revision, number, tool, matches, identical, mod
   const [corner, setCorner] = useState(corners[0]);
   const [menu, setMenu] = useState(false), [small, setSmall] = useState(false);
   const [asleep, setAsleep] = useState(false), [speech, setSpeech] = useState(null);
+  const [yielded, setYielded] = useState(false);
   const pose = asleep ? 'nap' : speech?.pose ?? 'tablet';
 
   useEffect(() => {
@@ -47,6 +50,40 @@ export default function Skelly({ revision, number, tool, matches, identical, mod
     const timer = setTimeout(() => setSpeech(null), bubbleDuration);
     return () => clearTimeout(timer);
   }, [speech]);
+
+  // Typing comes first: while a text field has focus on a touch or narrow screen, or the companion
+  // would sit over that field, her sprite and controls hide. Speech stays in the live region.
+  useEffect(() => {
+    let frame = 0;
+    function evaluate() {
+      if (!root.current) return;
+      const field = document.activeElement;
+      if (!(field instanceof Element) || !field.matches(fieldSelector) || root.current?.contains(field)) { setYielded(false); return; }
+      if (window.matchMedia('(pointer: coarse), (max-width: 780px)').matches) { setYielded(true); return; }
+      const box = field.getBoundingClientRect();
+      setYielded([...root.current.querySelectorAll('button, .skelly-bubble, .skelly-actions:not([hidden])')].some(el => overlaps(el.getBoundingClientRect(), box)));
+    }
+    function schedule() { cancelAnimationFrame(frame); frame = requestAnimationFrame(evaluate); }
+    function afterFocus() { setTimeout(evaluate, 0); }
+    evaluate();
+    window.addEventListener('focusin', afterFocus);
+    window.addEventListener('focusout', afterFocus);
+    window.addEventListener('resize', schedule);
+    window.addEventListener('scroll', schedule, { capture: true, passive: true });
+    window.visualViewport?.addEventListener('resize', schedule);
+    window.visualViewport?.addEventListener('scroll', schedule);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('focusin', afterFocus);
+      window.removeEventListener('focusout', afterFocus);
+      window.removeEventListener('resize', schedule);
+      window.removeEventListener('scroll', schedule, { capture: true });
+      window.visualViewport?.removeEventListener('resize', schedule);
+      window.visualViewport?.removeEventListener('scroll', schedule);
+    };
+  }, [speech, menu, small, corner, asleep]);
+
+  useEffect(() => { if (yielded) setMenu(false); }, [yielded]);
 
   useEffect(() => {
     if (!menu && !speech) return;
@@ -121,7 +158,7 @@ export default function Skelly({ revision, number, tool, matches, identical, mod
     care(asleep ? 'wake' : 'pet');
   }
 
-  return <div ref={root} className="skelly-pet" data-corner={corner} data-small={small} data-pose={pose} role="group" aria-label="Skellywix">
+  return <div ref={root} className="skelly-pet" data-corner={corner} data-small={small} data-pose={pose} data-yield={yielded} role="group" aria-label="Skellywix">
     <button type="button" ref={sprite} className="skelly-sprite" aria-label={small ? 'Show Skellywix' : asleep ? 'Wake Skellywix' : 'Pet Skellywix'}
       aria-describedby={small ? undefined : 'skelly-description'} title={small ? 'Show Skellywix' : 'Skellywix · Click to interact, drag to move'}
       onPointerDown={grab} onPointerMove={move} onPointerUp={release} onPointerCancel={release} onLostPointerCapture={release} onClick={tap}>

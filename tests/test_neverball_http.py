@@ -1,12 +1,14 @@
 """The fixed Windows game route must not inherit broader build authority."""
 import http.client
+import tempfile
 import threading
 import unittest
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 from unittest.mock import Mock
 
 from build_desk.desk import Operator
-from build_desk.game_jobs import Unqualified
+from build_desk.game_jobs import GameJobError, Rejected
 
 
 class GameHTTP(unittest.TestCase):
@@ -15,7 +17,7 @@ class GameHTTP(unittest.TestCase):
         self.http.authority = '%s:%d' % self.http.server_address
         self.http.games = Mock()
         self.job = 'f' * 32
-        self.http.games.status.return_value = {'id': self.job, 'state': 'waiting_windows'}
+        self.http.games.status.return_value = {'id': self.job, 'state': 'built'}
         self.thread = threading.Thread(target=self.http.serve_forever, daemon=True)
         self.thread.start()
         self.addCleanup(self.stop)
@@ -58,11 +60,24 @@ class GameHTTP(unittest.TestCase):
         self.assertEqual(self.request('GET', '/game/status/' + self.job)[0], 200)
         self.http.games.status.assert_called_once_with(self.job)
 
-    def test_unqualified_game_cannot_be_downloaded(self):
-        self.http.games.package.side_effect = Unqualified('Windows comparison incomplete')
-        status, body = self.request('GET', '/game/package/' + self.job)
-        self.assertEqual(status, 409)
-        self.assertNotIn(b'PK\x03\x04', body)
+    def test_game_without_an_intact_finished_candidate_cannot_be_downloaded(self):
+        for failure in (GameJobError('Run is failed; no package is available.'),
+                        Rejected('The candidate ZIP no longer matches its journaled hash.')):
+            with self.subTest(failure=str(failure)):
+                self.http.games.package.reset_mock()
+                self.http.games.package.side_effect = failure
+                status, body = self.request('GET', '/game/package/' + self.job)
+                self.assertEqual(status, 409)
+                self.assertNotIn(b'PK\x03\x04', body)
+                self.http.games.package.assert_called_once_with(self.job)
+
+    def test_finished_candidate_downloads_without_a_windows_observation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'candidate.zip'
+            path.write_bytes(b'PK\x03\x04built candidate')
+            self.http.games.package.return_value = (path, 'ab' * 32)
+            status, body = self.request('GET', '/game/package/' + self.job)
+        self.assertEqual((status, body), (200, b'PK\x03\x04built candidate'))
         self.http.games.package.assert_called_once_with(self.job)
 
     def test_upload_requires_origin_fixed_request_and_reference_release(self):

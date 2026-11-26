@@ -1,0 +1,27 @@
+{
+  "schema": "yuzu.report/1",
+  "revision": 1,
+  "slots": {
+    "a": {
+      "size": 3,
+      "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      "format": "unknown",
+      "architecture": "unknown"
+    }
+  },
+  "events": [
+    {
+      "n": 1,
+      "actor": "operator",
+      "tool": "identify_file",
+      "result": {
+        "size": 3,
+        "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        "format": "unknown",
+        "architecture": "unknown"
+      },
+      "slot": "a"
+    }
+  ],
+  "earlier_events_omitted": 0
+}

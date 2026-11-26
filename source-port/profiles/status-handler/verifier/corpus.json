@@ -1,0 +1,98 @@
+[
+  {
+    "id": "delete-status",
+    "held_out": false,
+    "argv": [],
+    "stdin": {
+      "latin1": "DELETE /status HTTP/1.1\r\nHost: example.test\r\n\r\n"
+    }
+  },
+  {
+    "id": "get-missing",
+    "held_out": false,
+    "argv": [],
+    "stdin": {
+      "latin1": "GET /missing HTTP/1.1\r\nHost: example.test\r\n\r\n"
+    }
+  },
+  {
+    "id": "get-status",
+    "held_out": false,
+    "argv": [],
+    "stdin": {
+      "latin1": "GET /status HTTP/1.1\r\nHost: example.test\r\n\r\n"
+    }
+  },
+  {
+    "id": "head-status",
+    "held_out": false,
+    "argv": [],
+    "stdin": {
+      "latin1": "HEAD /status HTTP/1.1\r\nHost: example.test\r\n\r\n"
+    }
+  },
+  {
+    "id": "held-01",
+    "held_out": true,
+    "argv": [],
+    "stdin": {
+      "latin1": "GET /status?verbose=1 HTTP/1.1\r\nHost: example.test\r\n\r\n"
+    }
+  },
+  {
+    "id": "held-02",
+    "held_out": true,
+    "argv": [],
+    "stdin": {
+      "latin1": "GET /status/ HTTP/1.1\r\nHost: example.test\r\n\r\n"
+    }
+  },
+  {
+    "id": "held-03",
+    "held_out": true,
+    "argv": [],
+    "stdin": {
+      "latin1": "POST /nowhere HTTP/1.1\r\nHost: example.test\r\nContent-Length: 0\r\n\r\n"
+    }
+  },
+  {
+    "id": "held-04",
+    "held_out": true,
+    "argv": [],
+    "stdin": {
+      "latin1": "get /status HTTP/1.1\r\nHost: example.test\r\n\r\n"
+    }
+  },
+  {
+    "id": "held-05",
+    "held_out": true,
+    "argv": [],
+    "stdin": {
+      "latin1": "GET /status HTTP/1.1\r\nHost: example.test\r\n"
+    }
+  },
+  {
+    "id": "held-06",
+    "held_out": true,
+    "argv": [],
+    "stdin": {
+      "latin1": "PUT /status HTTP/1.0\r\nContent-Length: 2\r\n\r\nxx"
+    }
+  },
+  {
+    "id": "held-07",
+    "held_out": true,
+    "argv": [],
+    "stdin": {
+      "latin1": "GET /status HTTP/1.0\r\n\r\n"
+    }
+  },
+  {
+    "id": "post-status",
+    "held_out": false,
+    "argv": [],
+    "stdin": {
+      "latin1": "POST /status HTTP/1.1\r\nHost: example.test\r\nContent-Length: 4\r\n\r\ndata"
+    }
+  }
+]

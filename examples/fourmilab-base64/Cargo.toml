@@ -1,0 +1,10 @@
+[package]
+name = "fourmilab-base64"
+version = "1.5.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "base64"
+path = "src/main.rs"
+test = false

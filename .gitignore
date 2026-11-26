@@ -3,3 +3,8 @@ __pycache__/
 .coverage
 htmlcov/
 reports/
+node_modules/
+target/
+frontend/dist/
+*.tsbuildinfo
+.worktrees/

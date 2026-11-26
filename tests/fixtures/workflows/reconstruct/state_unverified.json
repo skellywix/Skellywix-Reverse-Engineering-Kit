@@ -1,0 +1,53 @@
+{
+  "runs": [
+    {
+      "id": "cccccccccccccccccccccccccccccccc",
+      "attempt": 1,
+      "status": "blocked"
+    }
+  ],
+  "run": {
+    "id": "cccccccccccccccccccccccccccccccc",
+    "manifest_hash": "8888888888888888888888888888888888888888888888888888888888888888",
+    "manifest": {
+      "required_cases": 2557,
+      "requested_model": "openai-codex/gpt-6.2-astra",
+      "release": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "attempt": 1,
+    "status": "blocked",
+    "events": [
+      {
+        "seq": 1,
+        "attempt": 1,
+        "at": "2026-11-24T12:00:00.000+00:00",
+        "stage": "intake",
+        "status": "queued",
+        "detail": {
+          "reason": "Queued on the pinned release."
+        }
+      },
+      {
+        "seq": 2,
+        "attempt": 1,
+        "at": "2026-11-24T12:00:01.000+00:00",
+        "stage": "rebuild",
+        "status": "blocked",
+        "detail": {
+          "reason": "No matching model companion."
+        }
+      }
+    ]
+  },
+  "releases": {
+    "active": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "previous": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "staged": null,
+    "items": []
+  },
+  "catalog": [],
+  "busy": false,
+  "running": null,
+  "update_error": null,
+  "builder_connected": false
+}

@@ -108,7 +108,7 @@ class ActiveSourceTests(unittest.TestCase):
     def test_catalog_uses_only_active_product_inputs(self):
         names = {name for name, _stage, _inputs in updater.sources()}
 
-        self.assertTrue({"rea-agents", "workbench-ui", "python:3.13-alpine"} <= names)
+        self.assertTrue({"rea", "rust-anything", "decompile", "frontend", "inspector-ui", "docker.io/library/python:3-alpine"} <= names)
         self.assertTrue(any(name.startswith("action:actions/checkout@") for name in names))
         self.assertTrue(any(name.startswith("action:actions/setup-python@") for name in names))
         self.assertTrue(any(name.startswith("action:actions/upload-artifact@") for name in names))
