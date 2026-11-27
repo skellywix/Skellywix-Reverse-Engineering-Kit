@@ -49,7 +49,7 @@ async function checkCare(page) {
 // Selecting the hash tool is a local view change; nothing is uploaded or written.
 async function checkYield(page) {
   const pet = page.getByRole('group', { name: 'Skellywix', exact: true });
-  const sprite = pet.getByRole('button', { name: 'Pet Skellywix', exact: true });
+  const sprite = pet.getByRole('button', { name: 'Pet Skellywix', exact: true, includeHidden: true });
   const original = page.viewportSize();
   const writes = [];
   const watch = req => { if (req.method() !== 'GET' && req.method() !== 'HEAD') writes.push(req.method()); };
