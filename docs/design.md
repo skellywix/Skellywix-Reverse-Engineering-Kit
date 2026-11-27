@@ -14,6 +14,8 @@ The file inspector runs as a paired local worker and server. It keeps only bound
 
 Two optional operator-controlled integrations remain inside that metadata boundary. The critic is off by default and can make one stateless model call with check labels, actors, outcomes, counts, and event numbers but no file bytes, paths, digests, keys, or sockets. A case-scoped metadata-agent key exposes four read-only case tools; it cannot load files, start a folio, pair itself, or execute a program, and it expires after a file change, 15 minutes, 32 calls, or explicit revocation.
 
+The [offline semantics CLI](semantic-analysis.md) is independent of Inspect and Convert. Source review and measured traces are separate inputs. The checker uses only the observed cases in the handoff, not source annotations or inferred rules. No source is executed and no report grants a compatibility receipt, download, or license.
+
 ## Source builds and updates
 
 The [project service](../build_desk/project_jobs.py) validates the input, selects a recipe, and compiles Rust or C/C++ in a networkless gVisor container. A build script runs only inside that sandbox. Python and static-site profiles package source or site files without running them. None of the four profiles runs the delivered application or compares it with an original.
