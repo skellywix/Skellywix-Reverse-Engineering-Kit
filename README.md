@@ -15,6 +15,16 @@ Skellywix RE Kit targets security research, cheat detection, defensive engineeri
 
 Use the Kit only on files and systems you own or are authorized to analyze.
 
+## Analyze behavior for a rewrite
+
+Use original source, observations from a running program, or both. For example, inspect the included line-count source without running it:
+
+```sh
+python -IB tools/semantics.py analyze --source source-port/profiles/line-count/public/original/line_count.py
+```
+
+The offline tool extracts facts from Python source and compares measured behavior from any language. Source-derived facts, observations, and hypotheses stay separate. You can share a behavior-only spec without sharing source, or keep the source in your workflow when its terms allow. The [semantic analysis guide](docs/semantic-analysis.md) includes a runnable comparison and its limits.
+
 ## Start the workspace
 
 Use a non-root account on a single-user Linux x86-64 host with Python 3.12 or later, Docker Engine, gVisor registered as `runsc`, and the systemd socket tools. No host Rust or Node installation, model account, or existing case is needed for Build and Inspect.

@@ -1,0 +1,57 @@
+{
+  "format": "behavior-trace-v1",
+  "basis": "black-box",
+  "interface": "dial",
+  "artifact_sha256": "4df17081ee40e9de66d4cbbdb9658fa10940fc5fe09aa954c4398184991336e1",
+  "observations": [
+    {
+      "state": "ready",
+      "action": "scale",
+      "input": 3,
+      "next_state": "ready",
+      "output": 11
+    },
+    {
+      "state": "ready",
+      "action": "scale",
+      "input": -2,
+      "next_state": "ready",
+      "output": -4
+    },
+    {
+      "state": "ready",
+      "action": "scale",
+      "input": 0,
+      "next_state": "ready",
+      "output": 2
+    },
+    {
+      "state": "ready",
+      "action": "scale",
+      "input": 3,
+      "next_state": "ready",
+      "output": 11
+    },
+    {
+      "state": "ready",
+      "action": "pause",
+      "input": null,
+      "next_state": "paused",
+      "output": "ok"
+    },
+    {
+      "state": "paused",
+      "action": "scale",
+      "input": 3,
+      "next_state": "paused",
+      "output": "ignored"
+    },
+    {
+      "state": "paused",
+      "action": "resume",
+      "input": null,
+      "next_state": "ready",
+      "output": "ok"
+    }
+  ]
+}

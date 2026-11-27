@@ -265,8 +265,9 @@ describe('Reconstruct workflow', () => {
     Object.assign(state, { runs: [], selected_run: null, releases: { active: null, previous: null, staged: null, items: [] } });
     const fetchMock = mockResponses(state);
     renderReconstruct('/reconstruct');
-    expect(await screen.findByText(/no active release/i)).toBeVisible();
-    expect(screen.getByText(/Fourmilab operator desk.*Releases and updates/i)).toBeVisible();
+    const message = await screen.findByText(/^no active release\b/i);
+    expect(message).toBeVisible();
+    expect(message).toHaveTextContent(/Fourmilab operator desk.*Releases and updates/i);
     const start = screen.getByRole('button', { name: 'Start reconstruction' });
     expect(start).toHaveAttribute('aria-disabled', 'true');
     await userEvent.click(start);
